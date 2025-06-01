@@ -7,18 +7,15 @@ package database
 
 import (
 	"context"
-	"database/sql"
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users(email, user_name, full_name, profile_image_url, dob, hashed_password, created_at, updated_at)
+INSERT INTO users(email, hashed_password, user_name, full_name, created_at, updated_at)
 VALUES(
     $1,
     $2,
     $3,
     $4,
-    $5,
-    $6,
     NOW(),
     NOW()
 )
@@ -26,22 +23,18 @@ RETURNING id, email, user_name, full_name, profile_image_url, dob, hashed_passwo
 `
 
 type CreateUserParams struct {
-	Email           string
-	UserName        string
-	FullName        string
-	ProfileImageUrl sql.NullString
-	Dob             sql.NullTime
-	HashedPassword  string
+	Email          string
+	HashedPassword string
+	UserName       string
+	FullName       string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
 		arg.Email,
+		arg.HashedPassword,
 		arg.UserName,
 		arg.FullName,
-		arg.ProfileImageUrl,
-		arg.Dob,
-		arg.HashedPassword,
 	)
 	var i User
 	err := row.Scan(
@@ -57,6 +50,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const deleteAllUsers = `-- name: DeleteAllUsers :exec
+DELETE FROM users
+`
+
+func (q *Queries) DeleteAllUsers(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+	return err
 }
 
 const getUserById = `-- name: GetUserById :one
