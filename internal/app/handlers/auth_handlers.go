@@ -80,3 +80,50 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 
 	RespondWithJson(writer, http.StatusCreated, response)
 }
+
+func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Request) {
+	// Decode the request
+	decoder := json.NewDecoder(request.Body)
+	loginRequest := emailAndPasswordRequest{}
+	if decodeErr := decoder.Decode(&loginRequest); decodeErr != nil {
+		RespondWithError(writer, http.StatusBadRequest, decodeErr.Error())
+		return
+	}
+
+	// Find user by email
+	userFromDb, getUserErr := cfg.Db.GetUserByEmail(request.Context(), loginRequest.Email)
+	if getUserErr != nil {
+		RespondWithError(writer, http.StatusNotFound, getUserErr.Error())
+		return
+	}
+
+	// Verify password
+	password := loginRequest.Password
+	if checkPassErr := CheckPasswordHash(userFromDb.HashedPassword, password); checkPassErr != nil {
+		RespondWithError(writer, http.StatusBadRequest, checkPassErr.Error())
+		return
+	}
+
+	// Create JWT
+	tokenString, jwtErr := MakeJWT(userFromDb.ID, cfg.TokenSecret, app.JWT_EXPIRE_TIME)
+	if jwtErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, jwtErr.Error())
+		return
+	}
+
+	// Create the response
+	response := userWithTokenResponse{
+		ID:              userFromDb.ID,
+		Email:           userFromDb.Email,
+		UserName:        userFromDb.UserName,
+		FullName:        userFromDb.FullName,
+		ProfileImageUrl: userFromDb.ProfileImageUrl.String,
+		Dob:             userFromDb.Dob.Time,
+		CreatedAt:       userFromDb.CreatedAt,
+		UpdatedAt:       userFromDb.UpdatedAt,
+		DeletedAt:       userFromDb.DeletedAt.Time,
+		AccessToken:     tokenString,
+	}
+
+	RespondWithJson(writer, http.StatusOK, response)
+}

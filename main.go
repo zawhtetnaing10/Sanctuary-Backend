@@ -39,6 +39,7 @@ func main() {
 	// Add Handlers
 	mux.HandleFunc("POST /api/register", apiCfg.RegisterHandler)
 	mux.HandleFunc("POST /api/reset", apiCfg.ResetHandler)
+	mux.HandleFunc("POST /api/login", apiCfg.LoginHandler)
 
 	// New http server
 	server := http.Server{
