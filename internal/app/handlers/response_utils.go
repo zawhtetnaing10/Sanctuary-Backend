@@ -3,9 +3,19 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
 )
+
+// If dob has zero value return empty string.
+// If it has value return in format YYYY-MM-DD
+func FormatNullDobString(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(app.TIME_PARSE_LAYOUT)
+}
 
 // Helper function to respond with json
 func RespondWithJson(writer http.ResponseWriter, code int, payload any) {

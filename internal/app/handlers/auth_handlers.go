@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -14,17 +15,132 @@ type emailAndPasswordRequest struct {
 	Password string `json:"password"`
 }
 
+type userWithoutTokenResponse struct {
+	ID              int64     `json:"id"`
+	Email           string    `json:"email"`
+	UserName        string    `json:"user_name"`
+	FullName        string    `json:"full_name"`
+	ProfileImageUrl string    `json:"profile_image_url"`
+	Dob             string    `json:"dob"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	DeletedAt       string    `json:"deleted_at"`
+}
+
 type userWithTokenResponse struct {
 	ID              int64     `json:"id"`
 	Email           string    `json:"email"`
 	UserName        string    `json:"user_name"`
 	FullName        string    `json:"full_name"`
 	ProfileImageUrl string    `json:"profile_image_url"`
-	Dob             time.Time `json:"dob"`
+	Dob             string    `json:"dob"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
-	DeletedAt       time.Time `json:"deleted_at"`
+	DeletedAt       string    `json:"deleted_at"`
 	AccessToken     string    `json:"access_token"`
+}
+
+// Update user
+func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *http.Request) {
+
+	// Validate the request first before doing anything
+	fullName := request.FormValue("full_name")
+	userName := request.FormValue("user_name")
+	dob := request.FormValue("dob")
+
+	if fullName == "" {
+		RespondWithError(writer, http.StatusBadRequest, "full name is requred.")
+		return
+	}
+
+	if userName == "" {
+		RespondWithError(writer, http.StatusBadRequest, "user name is requred.")
+		return
+	}
+
+	if dob == "" {
+		RespondWithError(writer, http.StatusBadRequest, "dob is requred.")
+		return
+	}
+
+	// Parse dob
+	dobParsed, parseErr := time.Parse(app.TIME_PARSE_LAYOUT, dob)
+	if parseErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, parseErr.Error())
+		return
+	}
+
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		RespondWithError(writer, http.StatusUnauthorized, tokenErr.Error())
+		return
+	}
+
+	// Verify the bearer token and get the id
+	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		RespondWithError(writer, http.StatusUnauthorized, jwtErr.Error())
+		return
+	}
+
+	// Get the file from request
+	const maxMemory = 10 << 30
+	request.Body = http.MaxBytesReader(writer, request.Body, maxMemory)
+
+	request.ParseMultipartForm(maxMemory)
+
+	// Upload it to AWS Server and get the download url
+	// TODO: - Continue here
+	downloadUrl, uploadErr := UploadFileToAWS(
+		"profile",
+		"image/",
+		request,
+		cfg.S3Client,
+		cfg.S3Bucket,
+		cfg.S3Region,
+	)
+	if uploadErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, uploadErr.Error())
+		return
+	}
+
+	// Create params to update user
+	params := database.UpdateUserProfileParams{
+		ID:       userId,
+		FullName: fullName,
+		UserName: userName,
+		Dob: sql.NullTime{
+			Time:  dobParsed,
+			Valid: true,
+		},
+		ProfileImageUrl: sql.NullString{
+			String: downloadUrl,
+			Valid:  true,
+		},
+	}
+
+	// Update the user in db using the id from bearer token
+	updatedUser, updateErr := cfg.Db.UpdateUserProfile(request.Context(), params)
+	if updateErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, updateErr.Error())
+		return
+	}
+
+	// Create the response
+	response := userWithoutTokenResponse{
+		ID:              updatedUser.ID,
+		Email:           updatedUser.Email,
+		UserName:        updatedUser.UserName,
+		FullName:        updatedUser.FullName,
+		ProfileImageUrl: updatedUser.ProfileImageUrl.String,
+		Dob:             FormatNullDobString(updatedUser.Dob.Time),
+		CreatedAt:       updatedUser.CreatedAt,
+		UpdatedAt:       updatedUser.UpdatedAt,
+		DeletedAt:       FormatNullDobString(updatedUser.DeletedAt.Time),
+	}
+
+	RespondWithJson(writer, http.StatusOK, response)
 }
 
 func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.Request) {
@@ -33,6 +149,16 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 	loginRequest := emailAndPasswordRequest{}
 	if decodeErr := decoder.Decode(&loginRequest); decodeErr != nil {
 		RespondWithError(writer, http.StatusBadRequest, decodeErr.Error())
+		return
+	}
+
+	if loginRequest.Email == "" {
+		RespondWithError(writer, http.StatusBadRequest, "email cannot be empty")
+		return
+	}
+
+	if loginRequest.Password == "" {
+		RespondWithError(writer, http.StatusBadRequest, "password cannot be empty")
 		return
 	}
 
@@ -71,10 +197,10 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 		UserName:        createdUser.UserName,
 		FullName:        createdUser.FullName,
 		ProfileImageUrl: createdUser.ProfileImageUrl.String,
-		Dob:             createdUser.Dob.Time,
+		Dob:             FormatNullDobString(createdUser.Dob.Time),
 		CreatedAt:       createdUser.CreatedAt,
 		UpdatedAt:       createdUser.UpdatedAt,
-		DeletedAt:       createdUser.DeletedAt.Time,
+		DeletedAt:       FormatNullDobString(createdUser.DeletedAt.Time),
 		AccessToken:     tokenString,
 	}
 
@@ -87,6 +213,16 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 	loginRequest := emailAndPasswordRequest{}
 	if decodeErr := decoder.Decode(&loginRequest); decodeErr != nil {
 		RespondWithError(writer, http.StatusBadRequest, decodeErr.Error())
+		return
+	}
+
+	if loginRequest.Email == "" {
+		RespondWithError(writer, http.StatusBadRequest, "email cannot be empty")
+		return
+	}
+
+	if loginRequest.Password == "" {
+		RespondWithError(writer, http.StatusBadRequest, "password cannot be empty")
 		return
 	}
 
@@ -118,10 +254,10 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 		UserName:        userFromDb.UserName,
 		FullName:        userFromDb.FullName,
 		ProfileImageUrl: userFromDb.ProfileImageUrl.String,
-		Dob:             userFromDb.Dob.Time,
+		Dob:             FormatNullDobString(userFromDb.Dob.Time),
 		CreatedAt:       userFromDb.CreatedAt,
 		UpdatedAt:       userFromDb.UpdatedAt,
-		DeletedAt:       userFromDb.DeletedAt.Time,
+		DeletedAt:       FormatNullDobString(userFromDb.DeletedAt.Time),
 		AccessToken:     tokenString,
 	}
 

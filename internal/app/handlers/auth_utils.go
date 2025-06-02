@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -56,6 +60,7 @@ func MakeJWT(id int64, tokenSecret string, expiresIn time.Duration) (string, err
 	return signedToken, nil
 }
 
+// Validate JWT Token
 func ValidateJWT(tokenString, tokenSecret string) (int64, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -78,4 +83,30 @@ func ValidateJWT(tokenString, tokenSecret string) (int64, error) {
 		return 0, fmt.Errorf("error parsing user id : %w", parseErr)
 	}
 	return userId, nil
+}
+
+// Get Bearer Token
+func GetBearerToken(headers http.Header) (string, error) {
+	// Get bearer token
+	authHeader := headers.Get(app.AUTHORIZATION)
+	// Auth token must not be empty
+	if authHeader == "" {
+		return "", errors.New("the auth token must not be empty")
+	}
+
+	// Remove prefix Bearer
+	tokenString := strings.TrimPrefix(authHeader, app.BEAERER)
+
+	// user sends in only Bearer with no token string
+	if tokenString == authHeader {
+		return "", errors.New("invalid bearer token format. The correct format is Bearer {token}")
+	}
+
+	// Check for empty token
+	tokenString = strings.TrimSpace(tokenString)
+	if tokenString == "" {
+		return "", errors.New("the token string must not be empty")
+	}
+
+	return tokenString, nil
 }

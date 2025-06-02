@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -91,6 +92,50 @@ WHERE id = $1
 
 func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUserById, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.UserName,
+		&i.FullName,
+		&i.ProfileImageUrl,
+		&i.Dob,
+		&i.HashedPassword,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET
+    full_name = $2,
+    user_name = $3,
+    profile_image_url = $4,
+    dob = $5
+WHERE
+    id = $1
+RETURNING id, email, user_name, full_name, profile_image_url, dob, hashed_password, created_at, updated_at, deleted_at
+`
+
+type UpdateUserProfileParams struct {
+	ID              int64
+	FullName        string
+	UserName        string
+	ProfileImageUrl sql.NullString
+	Dob             sql.NullTime
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateUserProfile,
+		arg.ID,
+		arg.FullName,
+		arg.UserName,
+		arg.ProfileImageUrl,
+		arg.Dob,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
