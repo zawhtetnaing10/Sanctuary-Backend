@@ -24,7 +24,6 @@ type userWithoutTokenResponse struct {
 	Dob             string    `json:"dob"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
-	DeletedAt       string    `json:"deleted_at"`
 }
 
 type userWithTokenResponse struct {
@@ -36,7 +35,6 @@ type userWithTokenResponse struct {
 	Dob             string    `json:"dob"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
-	DeletedAt       string    `json:"deleted_at"`
 	AccessToken     string    `json:"access_token"`
 }
 
@@ -137,7 +135,6 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 		Dob:             FormatNullDobString(updatedUser.Dob.Time),
 		CreatedAt:       updatedUser.CreatedAt,
 		UpdatedAt:       updatedUser.UpdatedAt,
-		DeletedAt:       FormatNullDobString(updatedUser.DeletedAt.Time),
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
@@ -200,7 +197,6 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 		Dob:             FormatNullDobString(createdUser.Dob.Time),
 		CreatedAt:       createdUser.CreatedAt,
 		UpdatedAt:       createdUser.UpdatedAt,
-		DeletedAt:       FormatNullDobString(createdUser.DeletedAt.Time),
 		AccessToken:     tokenString,
 	}
 
@@ -257,7 +253,6 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 		Dob:             FormatNullDobString(userFromDb.Dob.Time),
 		CreatedAt:       userFromDb.CreatedAt,
 		UpdatedAt:       userFromDb.UpdatedAt,
-		DeletedAt:       FormatNullDobString(userFromDb.DeletedAt.Time),
 		AccessToken:     tokenString,
 	}
 
