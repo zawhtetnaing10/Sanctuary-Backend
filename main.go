@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app/handlers"
@@ -23,11 +23,16 @@ func main() {
 	// Get dburl from env
 	dbURL := os.Getenv("DB_URL")
 
-	// Open DB
-	db, err := sql.Open("postgres", dbURL)
+	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {
-		log.Fatal("Error loading .env file: %w", err)
+		log.Fatal("Unable to connect to db %w", err)
 	}
+
+	// // Open DB
+	// dbConn, err := sql.Open("pgx", dbURL)
+	// if err != nil {
+	// 	log.Fatal("Error loading .env file: %w", err)
+	// }
 
 	// AWS Set up
 	s3Bucket := os.Getenv("S3_BUCKET")
@@ -47,7 +52,7 @@ func main() {
 
 	// Config
 	apiCfg := handlers.ApiConfig{
-		Db:          database.New(db),
+		Db:          database.New(pool),
 		TokenSecret: os.Getenv("TOKEN_SECRET"),
 		Platform:    os.Getenv("PLATFORM"),
 		S3Bucket:    s3Bucket,

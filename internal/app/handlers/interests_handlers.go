@@ -26,8 +26,8 @@ func (cfg *ApiConfig) GetAllInterests(writer http.ResponseWriter, request *http.
 		interestResponse := interestResponse{
 			ID:        interestDb.ID,
 			Name:      interestDb.Name,
-			CreatedAt: interestDb.CreatedAt,
-			UpdatedAt: interestDb.UpdatedAt,
+			CreatedAt: interestDb.CreatedAt.Time,
+			UpdatedAt: interestDb.UpdatedAt.Time,
 		}
 		response = append(response, interestResponse)
 	}

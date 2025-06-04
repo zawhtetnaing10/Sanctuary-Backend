@@ -7,7 +7,8 @@ package database
 
 import (
 	"context"
-	"database/sql"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const createUser = `-- name: CreateUser :one
@@ -31,7 +32,7 @@ type CreateUserParams struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser,
+	row := q.db.QueryRow(ctx, createUser,
 		arg.Email,
 		arg.HashedPassword,
 		arg.UserName,
@@ -58,7 +59,7 @@ DELETE FROM users
 `
 
 func (q *Queries) DeleteAllUsers(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllUsers)
+	_, err := q.db.Exec(ctx, deleteAllUsers)
 	return err
 }
 
@@ -68,7 +69,7 @@ WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserByEmail, email)
+	row := q.db.QueryRow(ctx, getUserByEmail, email)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -91,7 +92,7 @@ WHERE id = $1
 `
 
 func (q *Queries) GetUserById(ctx context.Context, id int64) (User, error) {
-	row := q.db.QueryRowContext(ctx, getUserById, id)
+	row := q.db.QueryRow(ctx, getUserById, id)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -114,7 +115,8 @@ SET
     full_name = $2,
     user_name = $3,
     profile_image_url = $4,
-    dob = $5
+    dob = $5,
+    updated_at = NOW()
 WHERE
     id = $1
 RETURNING id, email, user_name, full_name, profile_image_url, dob, hashed_password, created_at, updated_at, deleted_at
@@ -124,12 +126,12 @@ type UpdateUserProfileParams struct {
 	ID              int64
 	FullName        string
 	UserName        string
-	ProfileImageUrl sql.NullString
-	Dob             sql.NullTime
+	ProfileImageUrl pgtype.Text
+	Dob             pgtype.Date
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, updateUserProfile,
+	row := q.db.QueryRow(ctx, updateUserProfile,
 		arg.ID,
 		arg.FullName,
 		arg.UserName,

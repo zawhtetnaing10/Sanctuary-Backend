@@ -7,35 +7,15 @@ package database
 
 import (
 	"context"
-)
 
-const createUsersHasInterests = `-- name: CreateUsersHasInterests :one
-INSERT INTO users_has_interests(user_id, interest_id, created_at, updated_at)
-VALUES(
-    $1,
-    $2,
-    NOW(),
-    NOW()
+	"github.com/jackc/pgx/v5/pgtype"
 )
-RETURNING id, user_id, interest_id, created_at, updated_at
-`
 
 type CreateUsersHasInterestsParams struct {
 	UserID     int64
 	InterestID int64
-}
-
-func (q *Queries) CreateUsersHasInterests(ctx context.Context, arg CreateUsersHasInterestsParams) (UsersHasInterest, error) {
-	row := q.db.QueryRowContext(ctx, createUsersHasInterests, arg.UserID, arg.InterestID)
-	var i UsersHasInterest
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.InterestID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
+	CreatedAt  pgtype.Timestamp
+	UpdatedAt  pgtype.Timestamp
 }
 
 const deleteAllUsersHasInterests = `-- name: DeleteAllUsersHasInterests :exec
@@ -43,6 +23,37 @@ DELETE FROM users_has_interests
 `
 
 func (q *Queries) DeleteAllUsersHasInterests(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllUsersHasInterests)
+	_, err := q.db.Exec(ctx, deleteAllUsersHasInterests)
 	return err
+}
+
+const getDuplicateInterestIds = `-- name: GetDuplicateInterestIds :many
+SELECT interest_id 
+FROM users_has_interests
+WHERE user_id = $1 AND interest_id = ANY($2::bigint[])
+`
+
+type GetDuplicateInterestIdsParams struct {
+	UserID  int64
+	Column2 []int64
+}
+
+func (q *Queries) GetDuplicateInterestIds(ctx context.Context, arg GetDuplicateInterestIdsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, getDuplicateInterestIds, arg.UserID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var interest_id int64
+		if err := rows.Scan(&interest_id); err != nil {
+			return nil, err
+		}
+		items = append(items, interest_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

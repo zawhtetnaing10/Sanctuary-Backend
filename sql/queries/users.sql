@@ -27,7 +27,8 @@ SET
     full_name = $2,
     user_name = $3,
     profile_image_url = $4,
-    dob = $5
+    dob = $5,
+    updated_at = NOW()
 WHERE
     id = $1
 RETURNING *;

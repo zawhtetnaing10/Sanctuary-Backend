@@ -1,12 +1,14 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
+	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app/validators"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
 
@@ -16,53 +18,42 @@ type emailAndPasswordRequest struct {
 }
 
 type userWithoutTokenResponse struct {
-	ID              int64     `json:"id"`
-	Email           string    `json:"email"`
-	UserName        string    `json:"user_name"`
-	FullName        string    `json:"full_name"`
-	ProfileImageUrl string    `json:"profile_image_url"`
-	Dob             string    `json:"dob"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              int64              `json:"id"`
+	Email           string             `json:"email"`
+	UserName        string             `json:"user_name"`
+	FullName        string             `json:"full_name"`
+	ProfileImageUrl string             `json:"profile_image_url"`
+	Dob             string             `json:"dob"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	Interests       []interestResponse `json:"interests"`
 }
 
 type userWithTokenResponse struct {
-	ID              int64     `json:"id"`
-	Email           string    `json:"email"`
-	UserName        string    `json:"user_name"`
-	FullName        string    `json:"full_name"`
-	ProfileImageUrl string    `json:"profile_image_url"`
-	Dob             string    `json:"dob"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	AccessToken     string    `json:"access_token"`
+	ID              int64              `json:"id"`
+	Email           string             `json:"email"`
+	UserName        string             `json:"user_name"`
+	FullName        string             `json:"full_name"`
+	ProfileImageUrl string             `json:"profile_image_url"`
+	Dob             string             `json:"dob"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	AccessToken     string             `json:"access_token"`
+	Interests       []interestResponse `json:"interests"`
 }
 
 // Update user
 func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *http.Request) {
 
 	// Validate the request first before doing anything
-	fullName := request.FormValue("full_name")
-	userName := request.FormValue("user_name")
-	dob := request.FormValue("dob")
-
-	if fullName == "" {
-		RespondWithError(writer, http.StatusBadRequest, "full name is requred.")
-		return
-	}
-
-	if userName == "" {
-		RespondWithError(writer, http.StatusBadRequest, "user name is requred.")
-		return
-	}
-
-	if dob == "" {
-		RespondWithError(writer, http.StatusBadRequest, "dob is requred.")
+	errCode, validationErr := validators.ValidateUpdateUserRequest(request, cfg.Db)
+	if validationErr != nil {
+		RespondWithError(writer, errCode, validationErr.Error())
 		return
 	}
 
 	// Parse dob
-	dobParsed, parseErr := time.Parse(app.TIME_PARSE_LAYOUT, dob)
+	dobParsed, parseErr := time.Parse(app.TIME_PARSE_LAYOUT, request.FormValue("dob"))
 	if parseErr != nil {
 		RespondWithError(writer, http.StatusInternalServerError, parseErr.Error())
 		return
@@ -86,6 +77,7 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	const maxMemory = 10 << 30
 	request.Body = http.MaxBytesReader(writer, request.Body, maxMemory)
 
+	// Parse multipart form
 	request.ParseMultipartForm(maxMemory)
 
 	// Upload it to AWS Server and get the download url
@@ -106,13 +98,13 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	// Create params to update user
 	params := database.UpdateUserProfileParams{
 		ID:       userId,
-		FullName: fullName,
-		UserName: userName,
-		Dob: sql.NullTime{
+		FullName: request.FormValue("full_name"),
+		UserName: request.FormValue("user_name"),
+		Dob: pgtype.Date{
 			Time:  dobParsed,
 			Valid: true,
 		},
-		ProfileImageUrl: sql.NullString{
+		ProfileImageUrl: pgtype.Text{
 			String: downloadUrl,
 			Valid:  true,
 		},
@@ -125,6 +117,73 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 		return
 	}
 
+	// Bulk inserting into users_has_interests
+	// Get Duplicate interest ids
+	interestsIds := request.MultipartForm.Value["ids"]
+	parsedInterestIdsFromRequest := []int64{}
+	for _, interestId := range interestsIds {
+		parsedId, parseErr := strconv.ParseInt(interestId, 10, 64)
+		if parseErr != nil {
+			RespondWithError(writer, http.StatusBadRequest, parseErr.Error())
+			return
+		}
+		parsedInterestIdsFromRequest = append(parsedInterestIdsFromRequest, parsedId)
+	}
+
+	getDupInterstIdParams := database.GetDuplicateInterestIdsParams{
+		UserID:  updatedUser.ID,
+		Column2: parsedInterestIdsFromRequest,
+	}
+	duplicateInterstIds, dupInterestIdsErr := cfg.Db.GetDuplicateInterestIds(request.Context(), getDupInterstIdParams)
+	if dupInterestIdsErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, dupInterestIdsErr.Error())
+		return
+	}
+
+	// Remove the duplicate interest ids from request
+	duplicateInterstIdsMap := map[int64]bool{}
+	for _, dupInterestId := range duplicateInterstIds {
+		duplicateInterstIdsMap[dupInterestId] = true
+	}
+
+	interestIdsWithoutDuplicates := []int64{}
+	for _, interestIdFromRequest := range parsedInterestIdsFromRequest {
+		_, ok := duplicateInterstIdsMap[interestIdFromRequest]
+		if !ok {
+			interestIdsWithoutDuplicates = append(interestIdsWithoutDuplicates, interestIdFromRequest)
+		}
+	}
+
+	// Bulk Insert the Interest ids into users_has_interests
+	usersHasInterestParamsSlice := []database.CreateUsersHasInterestsParams{}
+	for _, interestId := range interestIdsWithoutDuplicates {
+		params := database.CreateUsersHasInterestsParams{
+			UserID:     userId,
+			InterestID: interestId,
+			CreatedAt: pgtype.Timestamp{
+				Time:  time.Now(),
+				Valid: true,
+			},
+			UpdatedAt: pgtype.Timestamp{
+				Time:  time.Now(),
+				Valid: true,
+			},
+		}
+		usersHasInterestParamsSlice = append(usersHasInterestParamsSlice, params)
+	}
+	_, createUsersHasInterestErr := cfg.Db.CreateUsersHasInterests(request.Context(), usersHasInterestParamsSlice)
+	if createUsersHasInterestErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, createUsersHasInterestErr.Error())
+		return
+	}
+
+	// Get Interests For User
+	interests, getInterestsErr := getInterestsForUser(userId, request, cfg.Db)
+	if getInterestsErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		return
+	}
+
 	// Create the response
 	response := userWithoutTokenResponse{
 		ID:              updatedUser.ID,
@@ -133,8 +192,9 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 		FullName:        updatedUser.FullName,
 		ProfileImageUrl: updatedUser.ProfileImageUrl.String,
 		Dob:             FormatNullDobString(updatedUser.Dob.Time),
-		CreatedAt:       updatedUser.CreatedAt,
-		UpdatedAt:       updatedUser.UpdatedAt,
+		CreatedAt:       updatedUser.CreatedAt.Time,
+		UpdatedAt:       updatedUser.UpdatedAt.Time,
+		Interests:       interests,
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
@@ -187,6 +247,13 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 		return
 	}
 
+	// Get Interests For User
+	interests, getInterestsErr := getInterestsForUser(createdUser.ID, request, cfg.Db)
+	if getInterestsErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		return
+	}
+
 	// Create the response
 	response := userWithTokenResponse{
 		ID:              createdUser.ID,
@@ -195,9 +262,10 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 		FullName:        createdUser.FullName,
 		ProfileImageUrl: createdUser.ProfileImageUrl.String,
 		Dob:             FormatNullDobString(createdUser.Dob.Time),
-		CreatedAt:       createdUser.CreatedAt,
-		UpdatedAt:       createdUser.UpdatedAt,
+		CreatedAt:       createdUser.CreatedAt.Time,
+		UpdatedAt:       createdUser.UpdatedAt.Time,
 		AccessToken:     tokenString,
+		Interests:       interests,
 	}
 
 	RespondWithJson(writer, http.StatusCreated, response)
@@ -243,6 +311,13 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 		return
 	}
 
+	// Get Interests For User
+	interests, getInterestsErr := getInterestsForUser(userFromDb.ID, request, cfg.Db)
+	if getInterestsErr != nil {
+		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		return
+	}
+
 	// Create the response
 	response := userWithTokenResponse{
 		ID:              userFromDb.ID,
@@ -251,10 +326,32 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 		FullName:        userFromDb.FullName,
 		ProfileImageUrl: userFromDb.ProfileImageUrl.String,
 		Dob:             FormatNullDobString(userFromDb.Dob.Time),
-		CreatedAt:       userFromDb.CreatedAt,
-		UpdatedAt:       userFromDb.UpdatedAt,
+		CreatedAt:       userFromDb.CreatedAt.Time,
+		UpdatedAt:       userFromDb.UpdatedAt.Time,
 		AccessToken:     tokenString,
+		Interests:       interests,
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
+}
+
+// Get Interests for user
+func getInterestsForUser(userId int64, request *http.Request, db *database.Queries) ([]interestResponse, error) {
+	interestsFromDb, err := db.GetInterestsForUser(request.Context(), userId)
+	if err != nil {
+		return []interestResponse{}, err
+	}
+
+	response := []interestResponse{}
+	for _, interest := range interestsFromDb {
+		interestResponse := interestResponse{
+			ID:        interest.ID,
+			Name:      interest.Name,
+			CreatedAt: interest.CreatedAt.Time,
+			UpdatedAt: interest.UpdatedAt.Time,
+		}
+		response = append(response, interestResponse)
+	}
+
+	return response, nil
 }

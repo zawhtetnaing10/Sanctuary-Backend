@@ -14,7 +14,7 @@ SELECT id, name, created_at, updated_at, deleted_at FROM interests
 `
 
 func (q *Queries) GetAllInterests(ctx context.Context) ([]Interest, error) {
-	rows, err := q.db.QueryContext(ctx, getAllInterests)
+	rows, err := q.db.Query(ctx, getAllInterests)
 	if err != nil {
 		return nil, err
 	}
@@ -33,8 +33,63 @@ func (q *Queries) GetAllInterests(ctx context.Context) ([]Interest, error) {
 		}
 		items = append(items, i)
 	}
-	if err := rows.Close(); err != nil {
+	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	return items, nil
+}
+
+const getExistingInterestIds = `-- name: GetExistingInterestIds :many
+SELECT id FROM interests
+WHERE id = ANY($1::bigint[])
+`
+
+func (q *Queries) GetExistingInterestIds(ctx context.Context, dollar_1 []int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, getExistingInterestIds, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getInterestsForUser = `-- name: GetInterestsForUser :many
+SELECT interests.id, interests.name, interests.created_at, interests.updated_at, interests.deleted_at FROM interests
+INNER JOIN users_has_interests 
+ON interests.id = users_has_interests.interest_id
+WHERE users_has_interests.user_id = $1
+`
+
+func (q *Queries) GetInterestsForUser(ctx context.Context, userID int64) ([]Interest, error) {
+	rows, err := q.db.Query(ctx, getInterestsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Interest
+	for rows.Next() {
+		var i Interest
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

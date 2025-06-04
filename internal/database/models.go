@@ -5,16 +5,15 @@
 package database
 
 import (
-	"database/sql"
-	"time"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Interest struct {
 	ID        int64
 	Name      string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt sql.NullTime
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+	DeletedAt pgtype.Timestamp
 }
 
 type User struct {
@@ -22,18 +21,18 @@ type User struct {
 	Email           string
 	UserName        string
 	FullName        string
-	ProfileImageUrl sql.NullString
-	Dob             sql.NullTime
+	ProfileImageUrl pgtype.Text
+	Dob             pgtype.Date
 	HashedPassword  string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	DeletedAt       sql.NullTime
+	CreatedAt       pgtype.Timestamp
+	UpdatedAt       pgtype.Timestamp
+	DeletedAt       pgtype.Timestamp
 }
 
 type UsersHasInterest struct {
 	ID         int64
 	UserID     int64
 	InterestID int64
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	CreatedAt  pgtype.Timestamp
+	UpdatedAt  pgtype.Timestamp
 }
