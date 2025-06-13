@@ -13,6 +13,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app/handlers"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -50,6 +51,12 @@ func main() {
 		log.Fatal("error configuring aws s3")
 	}
 
+	// Logger
+	logger, loggerInitErr := zap.NewDevelopment()
+	if loggerInitErr != nil {
+		os.Exit(1)
+	}
+
 	// Config
 	apiCfg := handlers.ApiConfig{
 		Db:          database.New(pool),
@@ -58,6 +65,7 @@ func main() {
 		S3Bucket:    s3Bucket,
 		S3Region:    s3Region,
 		S3Client:    s3.NewFromConfig(awsCfg),
+		Logger:      logger,
 	}
 
 	// New http server mux
@@ -67,7 +75,7 @@ func main() {
 	mux.HandleFunc("POST /api/register", apiCfg.RegisterHandler)
 	mux.HandleFunc("POST /api/reset", apiCfg.ResetHandler)
 	mux.HandleFunc("POST /api/login", apiCfg.LoginHandler)
-	mux.HandleFunc("PUT /api/updateUser", apiCfg.UpdateUserHandler)
+	mux.HandleFunc("POST /api/updateUser", apiCfg.UpdateUserHandler)
 	mux.HandleFunc("GET /api/interests", apiCfg.GetAllInterests)
 
 	// New http server

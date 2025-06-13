@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -15,18 +17,6 @@ import (
 type emailAndPasswordRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
-}
-
-type userWithoutTokenResponse struct {
-	ID              int64              `json:"id"`
-	Email           string             `json:"email"`
-	UserName        string             `json:"user_name"`
-	FullName        string             `json:"full_name"`
-	ProfileImageUrl string             `json:"profile_image_url"`
-	Dob             string             `json:"dob"`
-	CreatedAt       time.Time          `json:"created_at"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-	Interests       []interestResponse `json:"interests"`
 }
 
 type userWithTokenResponse struct {
@@ -55,21 +45,24 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	// Parse dob
 	dobParsed, parseErr := time.Parse(app.TIME_PARSE_LAYOUT, request.FormValue("dob"))
 	if parseErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, parseErr.Error())
+		cfg.LogError(SERVER_MSG_ERROR_PARSING_DOB, parseErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
 	// Get the bearer token from the request
 	token, tokenErr := GetBearerToken(request.Header)
 	if tokenErr != nil {
-		RespondWithError(writer, http.StatusUnauthorized, tokenErr.Error())
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
 	// Verify the bearer token and get the id
 	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
 	if jwtErr != nil {
-		RespondWithError(writer, http.StatusUnauthorized, jwtErr.Error())
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
@@ -81,7 +74,6 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	request.ParseMultipartForm(maxMemory)
 
 	// Upload it to AWS Server and get the download url
-	// TODO: - Continue here
 	downloadUrl, uploadErr := UploadFileToAWS(
 		"profile",
 		"image/",
@@ -91,7 +83,8 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 		cfg.S3Region,
 	)
 	if uploadErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, uploadErr.Error())
+		cfg.LogError(SERVER_MSG_ERROR_UPLOADING_PHOTO, uploadErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPLOADING_PROFILE_PICTURE)
 		return
 	}
 
@@ -113,7 +106,8 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	// Update the user in db using the id from bearer token
 	updatedUser, updateErr := cfg.Db.UpdateUserProfile(request.Context(), params)
 	if updateErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, updateErr.Error())
+		cfg.LogError(SERVER_MSG_UPDATE_USER_ERROR, updateErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
@@ -124,7 +118,8 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	for _, interestId := range interestsIds {
 		parsedId, parseErr := strconv.ParseInt(interestId, 10, 64)
 		if parseErr != nil {
-			RespondWithError(writer, http.StatusBadRequest, parseErr.Error())
+			cfg.LogError(SERVER_MSG_INTEREST_BULK_INSERT_ERROR, parseErr)
+			RespondWithError(writer, http.StatusBadRequest, CLIENT_MSG_ERROR_UPDATE_USER)
 			return
 		}
 		parsedInterestIdsFromRequest = append(parsedInterestIdsFromRequest, parsedId)
@@ -136,7 +131,8 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	}
 	duplicateInterstIds, dupInterestIdsErr := cfg.Db.GetDuplicateInterestIds(request.Context(), getDupInterstIdParams)
 	if dupInterestIdsErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, dupInterestIdsErr.Error())
+		cfg.LogError(SERVER_MSG_GET_DUPLICATE_IDS, dupInterestIdsErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
@@ -173,19 +169,29 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 	}
 	_, createUsersHasInterestErr := cfg.Db.CreateUsersHasInterests(request.Context(), usersHasInterestParamsSlice)
 	if createUsersHasInterestErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, createUsersHasInterestErr.Error())
+		cfg.LogError(SERVER_MSG_CREATE_USER_HAS_INTEREST_ERROR, createUsersHasInterestErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPDATE_USER)
 		return
 	}
 
 	// Get Interests For User
 	interests, getInterestsErr := getInterestsForUser(userId, request, cfg.Db)
 	if getInterestsErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		cfg.LogError(SERVER_MSG_CREATE_USER_HAS_INTEREST_ERROR, getInterestsErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_ERROR_UPDATE_USER)
+		return
+	}
+
+	// Create JWT
+	tokenString, jwtErr := MakeJWT(updatedUser.ID, cfg.TokenSecret, app.JWT_EXPIRE_TIME)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_MAKE_JWT_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusInternalServerError, jwtErr.Error())
 		return
 	}
 
 	// Create the response
-	response := userWithoutTokenResponse{
+	response := userWithTokenResponse{
 		ID:              updatedUser.ID,
 		Email:           updatedUser.Email,
 		UserName:        updatedUser.UserName,
@@ -195,6 +201,7 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 		CreatedAt:       updatedUser.CreatedAt.Time,
 		UpdatedAt:       updatedUser.UpdatedAt.Time,
 		Interests:       interests,
+		AccessToken:     tokenString,
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
@@ -210,12 +217,12 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 	}
 
 	if loginRequest.Email == "" {
-		RespondWithError(writer, http.StatusBadRequest, "email cannot be empty")
+		RespondWithError(writer, http.StatusBadRequest, CLIENT_MSG_EMAIL_CANNOT_BE_EMPTY)
 		return
 	}
 
 	if loginRequest.Password == "" {
-		RespondWithError(writer, http.StatusBadRequest, "password cannot be empty")
+		RespondWithError(writer, http.StatusBadRequest, CLIENT_MSG_PASSWORD_CANNOT_BE_EMPTY)
 		return
 	}
 
@@ -223,7 +230,8 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 	password := loginRequest.Password
 	hashedPassword, hashErr := HashPassword(password)
 	if hashErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, hashErr.Error())
+		cfg.LogError(SERVER_MSG_PASSWORD_HASH_FAILED, hashErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_CREATE_USER_ERROR)
 		return
 	}
 
@@ -236,13 +244,15 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 	}
 	createdUser, createUserErr := cfg.Db.CreateUser(request.Context(), createUserParams)
 	if createUserErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, createUserErr.Error())
+		cfg.LogError(SERVER_MSG_CREATE_USER_FAILED, createUserErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_CREATE_USER_ERROR)
 		return
 	}
 
 	// Create JWT
 	tokenString, jwtErr := MakeJWT(createdUser.ID, cfg.TokenSecret, app.JWT_EXPIRE_TIME)
 	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_MAKE_JWT_FAILED, jwtErr)
 		RespondWithError(writer, http.StatusInternalServerError, jwtErr.Error())
 		return
 	}
@@ -250,7 +260,8 @@ func (cfg *ApiConfig) RegisterHandler(writer http.ResponseWriter, request *http.
 	// Get Interests For User
 	interests, getInterestsErr := getInterestsForUser(createdUser.ID, request, cfg.Db)
 	if getInterestsErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		cfg.LogError(SERVER_MSG_GETTING_INTEREST_FOR_USER_FAILED, getInterestsErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_CREATE_USER_ERROR)
 		return
 	}
 
@@ -281,18 +292,23 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 	}
 
 	if loginRequest.Email == "" {
-		RespondWithError(writer, http.StatusBadRequest, "email cannot be empty")
+		RespondWithError(writer, http.StatusBadRequest, CLIENT_MSG_EMAIL_CANNOT_BE_EMPTY)
 		return
 	}
 
 	if loginRequest.Password == "" {
-		RespondWithError(writer, http.StatusBadRequest, "password cannot be empty")
+		RespondWithError(writer, http.StatusBadRequest, CLIENT_MSG_PASSWORD_CANNOT_BE_EMPTY)
 		return
 	}
 
 	// Find user by email
 	userFromDb, getUserErr := cfg.Db.GetUserByEmail(request.Context(), loginRequest.Email)
 	if getUserErr != nil {
+		if errors.Is(getUserErr, sql.ErrNoRows) {
+			RespondWithError(writer, http.StatusNotFound, CLIENT_MSG_INCORRECT_EMAIL_OR_PASSWORD)
+			return
+		}
+		cfg.LogError(SERVER_MSG_LOGIN_FAILED, getUserErr)
 		RespondWithError(writer, http.StatusNotFound, getUserErr.Error())
 		return
 	}
@@ -300,13 +316,14 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 	// Verify password
 	password := loginRequest.Password
 	if checkPassErr := CheckPasswordHash(userFromDb.HashedPassword, password); checkPassErr != nil {
-		RespondWithError(writer, http.StatusBadRequest, checkPassErr.Error())
+		RespondWithError(writer, http.StatusNotFound, CLIENT_MSG_INCORRECT_EMAIL_OR_PASSWORD)
 		return
 	}
 
 	// Create JWT
 	tokenString, jwtErr := MakeJWT(userFromDb.ID, cfg.TokenSecret, app.JWT_EXPIRE_TIME)
 	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_MAKE_JWT_FAILED, jwtErr)
 		RespondWithError(writer, http.StatusInternalServerError, jwtErr.Error())
 		return
 	}
@@ -314,7 +331,8 @@ func (cfg *ApiConfig) LoginHandler(writer http.ResponseWriter, request *http.Req
 	// Get Interests For User
 	interests, getInterestsErr := getInterestsForUser(userFromDb.ID, request, cfg.Db)
 	if getInterestsErr != nil {
-		RespondWithError(writer, http.StatusInternalServerError, getInterestsErr.Error())
+		cfg.LogError(SERVER_MSG_GETTING_INTEREST_FOR_USER_FAILED, getInterestsErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_INCORRECT_EMAIL_OR_PASSWORD)
 		return
 	}
 
