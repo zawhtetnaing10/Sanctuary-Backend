@@ -8,4 +8,7 @@ VALUES(
 )
 RETURNING *;
 
+-- name: DeleteAllPosts :exec
+DELETE FROM posts;
+
 
