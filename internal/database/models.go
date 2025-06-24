@@ -8,12 +8,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Comment struct {
+	ID        int64
+	Content   string
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+	DeletedAt pgtype.Timestamp
+	UserID    int64
+	PostID    int64
+}
+
 type Interest struct {
 	ID        int64
 	Name      string
 	CreatedAt pgtype.Timestamp
 	UpdatedAt pgtype.Timestamp
 	DeletedAt pgtype.Timestamp
+}
+
+type Post struct {
+	ID        int64
+	Content   string
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+	DeletedAt pgtype.Timestamp
+	UserID    int64
+}
+
+type PostLike struct {
+	ID        int64
+	UserID    int64
+	PostID    int64
+	CreatedAt pgtype.Timestamp
+	UpdatedAt pgtype.Timestamp
+}
+
+type PostMedium struct {
+	ID         int64
+	MediaUrl   string
+	OrderIndex int32
+	CreatedAt  pgtype.Timestamp
+	UpdatedAt  pgtype.Timestamp
+	DeletedAt  pgtype.Timestamp
+	PostID     int64
 }
 
 type User struct {

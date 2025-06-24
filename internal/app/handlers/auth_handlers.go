@@ -32,6 +32,17 @@ type userWithTokenResponse struct {
 	Interests       []interestResponse `json:"interests"`
 }
 
+type userWithoutTokenResponse struct {
+	ID              int64     `json:"id"`
+	Email           string    `json:"email"`
+	UserName        string    `json:"user_name"`
+	FullName        string    `json:"full_name"`
+	ProfileImageUrl string    `json:"profile_image_url"`
+	Dob             string    `json:"dob"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 // Update user
 func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *http.Request) {
 

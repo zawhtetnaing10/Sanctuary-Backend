@@ -61,7 +61,13 @@ func UploadFileToAWS(inputParamName string, fileType string, request *http.Reque
 	random32BytesString := hex.EncodeToString(randomBytes)
 
 	// Create file key
-	fileKey := fmt.Sprintf("profiles/%v%v", random32BytesString, originalExtension)
+	prefix := ""
+	if inputParamName == "profile" {
+		prefix = "profiles"
+	} else {
+		prefix = "images"
+	}
+	fileKey := fmt.Sprintf("%v/%v%v", prefix, random32BytesString, originalExtension)
 
 	// Upload the file
 	_, putObjErr := s3Client.PutObject(request.Context(), &s3.PutObjectInput{
