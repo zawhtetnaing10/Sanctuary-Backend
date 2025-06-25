@@ -17,3 +17,6 @@ const JWT_EXPIRE_TIME = 1 * time.Hour
 
 // Time parse layout
 const TIME_PARSE_LAYOUT = "2006-01-02"
+
+// Pagination
+const PAGE_SIZE = 10

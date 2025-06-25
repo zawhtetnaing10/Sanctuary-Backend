@@ -2,9 +2,12 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
 
@@ -13,12 +16,98 @@ type PostResponse struct {
 	ID           int64                    `json:"id"`
 	Content      string                   `json:"content"`
 	MediaUrl     string                   `json:"media_url"`
-	IsLiked      bool                     `json:"is_liked"`
+	LikedByUser  bool                     `json:"liked_by_user"`
 	LikeCount    int                      `json:"like_count"`
 	CommentCount int                      `json:"comment_count"`
 	CreatedAt    time.Time                `json:"created_at"`
 	UpdatedAt    time.Time                `json:"updated_at"`
 	User         userWithoutTokenResponse `json:"user"`
+}
+
+func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		return
+	}
+
+	// Verify the bearer token and get the id
+	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		return
+	}
+
+	// Get the page and calculate the offset
+	var page int
+	pageStr := request.URL.Query().Get("page")
+	if pageStr == "" {
+		// If no page number is provided, default to 1
+		page = 1
+	} else {
+		// Convert the pageStr to int. If conversion fails, default to 1
+		pageNumber, err := strconv.Atoi(pageStr)
+		if err != nil || pageNumber < 1 {
+			pageNumber = 1
+		}
+		page = pageNumber
+	}
+	offset := (page - 1) * app.PAGE_SIZE
+
+	// Get all posts
+	params := database.GetAllPostsParams{
+		UserID: userId,
+		Offset: int32(offset),
+		Limit:  app.PAGE_SIZE,
+	}
+	posts, getAllPostsErr := cfg.Db.GetAllPosts(request.Context(), params)
+	if getAllPostsErr != nil {
+		cfg.LogError(getAllPostsErr.Error(), getAllPostsErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Error retrieving all posts")
+		return
+	}
+
+	response := []PostResponse{}
+
+	for _, postFromDb := range posts {
+
+		// If media url exists, get the first media url.
+		mediaUrl := ""
+		fmt.Printf("Media urls %v", postFromDb.MediaUrlsArray)
+		if len(postFromDb.MediaUrlsArray) > 0 {
+			mediaUrl = postFromDb.MediaUrlsArray[0]
+		}
+
+		postResponse := PostResponse{
+			ID:           postFromDb.ID,
+			Content:      postFromDb.Content,
+			MediaUrl:     mediaUrl,
+			LikedByUser:  postFromDb.LikedByUser,
+			LikeCount:    int(postFromDb.LikeCount),
+			CommentCount: int(postFromDb.CommentCount),
+			CreatedAt:    postFromDb.CreatedAt.Time,
+			UpdatedAt:    postFromDb.UpdatedAt.Time,
+			User: userWithoutTokenResponse{
+				ID:              postFromDb.AuthorID,
+				Email:           postFromDb.AuthorEmail,
+				UserName:        postFromDb.AuthorUserName,
+				FullName:        postFromDb.AuthorFullName,
+				ProfileImageUrl: postFromDb.AuthorProfileImageUrl.String,
+				Dob:             FormatNullDobString(postFromDb.AuthorDob.Time),
+				CreatedAt:       postFromDb.AuthorCreatedAt.Time,
+				UpdatedAt:       postFromDb.AuthorUpdatedAt.Time,
+			},
+		}
+
+		response = append(response, postResponse)
+	}
+
+	// TODO: - Add Meta response for page information
+
+	RespondWithJson(writer, http.StatusOK, response)
 }
 
 // Create post handler.
@@ -147,7 +236,7 @@ func (cfg *ApiConfig) CreatePostHandler(writer http.ResponseWriter, request *htt
 	response := PostResponse{
 		ID:           createdPost.ID,
 		Content:      createdPost.Content,
-		IsLiked:      false,
+		LikedByUser:  false,
 		LikeCount:    0,
 		CommentCount: 0,
 		CreatedAt:    createdPost.CreatedAt.Time,

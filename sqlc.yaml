@@ -8,3 +8,7 @@ sql:
         package: "database"
         out: "internal/database"
         sql_package: "pgx/v5"
+        overrides:
+          - db_type: "_text"
+            go_type: 
+              type: "[]string"

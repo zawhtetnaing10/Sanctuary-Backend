@@ -78,6 +78,7 @@ func main() {
 	mux.HandleFunc("POST /api/updateUser", apiCfg.UpdateUserHandler)
 	mux.HandleFunc("GET /api/interests", apiCfg.GetAllInterests)
 	mux.HandleFunc("POST /api/posts", apiCfg.CreatePostHandler)
+	mux.HandleFunc("GET /api/posts", apiCfg.GetAllPostsHandler)
 
 	// New http server
 	server := http.Server{
