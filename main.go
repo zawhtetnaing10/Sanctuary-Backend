@@ -81,6 +81,8 @@ func main() {
 	mux.HandleFunc("GET /api/posts", apiCfg.GetAllPostsHandler)
 	mux.HandleFunc("GET /api/posts/{post_id}", apiCfg.GetPostById)
 	mux.HandleFunc("POST /api/post_like", apiCfg.PostLikeHandler)
+	mux.HandleFunc("POST /api/comments", apiCfg.CreateCommentHandler)
+	mux.HandleFunc("GET /api/comments", apiCfg.GetAllCommentsHandler)
 
 	// New http server
 	server := http.Server{

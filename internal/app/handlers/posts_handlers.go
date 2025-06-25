@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,28 @@ import (
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
+
+// Comment Request
+type CommentRequest struct {
+	Content string `json:"content"`
+	PostId  int    `json:"post_id"`
+}
+
+// Get All Comments Request
+type RequestWithPostId struct {
+	PostId int `json:"post_id"`
+}
+
+// Comment Response
+type CommentResponse struct {
+	ID        int64                    `json:"id"`
+	Content   string                   `json:"content"`
+	CreatedAt time.Time                `json:"created_at"`
+	UpdatedAt time.Time                `json:"updated_at"`
+	PostId    int64                    `json:"post_id"`
+	UserId    int64                    `json:"user_id"`
+	User      userWithoutTokenResponse `json:"user"`
+}
 
 // Post List Response
 type PostListResponse struct {
@@ -37,6 +60,155 @@ type PostResponse struct {
 	User         userWithoutTokenResponse `json:"user"`
 }
 
+// Get All Comments for Post
+func (cfg *ApiConfig) GetAllCommentsHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized get comments.")
+		return
+	}
+
+	// Verify the bearer token and get the id
+	_, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get comments.")
+		return
+	}
+
+	// Parse the reqeust
+	decoder := json.NewDecoder(request.Body)
+	requestParams := RequestWithPostId{}
+	if err := decoder.Decode(&requestParams); err != nil {
+		cfg.LogError(err.Error(), err)
+		RespondWithError(writer, http.StatusBadRequest, "Something went wrong while getting comments. Please try again.")
+		return
+	}
+
+	// Get Post Id
+	postId := requestParams.PostId
+	if postId == 0 {
+		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty")
+	}
+
+	comments, commentsErr := cfg.Db.GetCommentsForPost(request.Context(), int64(postId))
+	if commentsErr != nil {
+		cfg.LogError(commentsErr.Error(), commentsErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while getting comments.")
+		return
+	}
+
+	response := []CommentResponse{}
+	for _, commentFromDb := range comments {
+		commentResponse := CommentResponse{
+			ID:        commentFromDb.ID,
+			Content:   commentFromDb.Content,
+			CreatedAt: commentFromDb.CreatedAt.Time,
+			UpdatedAt: commentFromDb.UpdatedAt.Time,
+			PostId:    commentFromDb.PostID,
+			UserId:    commentFromDb.UserID,
+			User: userWithoutTokenResponse{
+				ID:              commentFromDb.AuthorID,
+				Email:           commentFromDb.AuthorEmail,
+				UserName:        commentFromDb.AuthorUserName,
+				FullName:        commentFromDb.AuthorFullName,
+				ProfileImageUrl: commentFromDb.AuthorProfileImageUrl.String,
+				Dob:             FormatNullDobString(commentFromDb.AuthorDob.Time),
+				CreatedAt:       commentFromDb.AuthorCreatedAt.Time,
+				UpdatedAt:       commentFromDb.AuthorUpdatedAt.Time,
+			},
+		}
+
+		response = append(response, commentResponse)
+	}
+
+	RespondWithJson(writer, http.StatusOK, response)
+}
+
+// Create Comment
+func (cfg *ApiConfig) CreateCommentHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to create comments.")
+		return
+	}
+
+	// Verify the bearer token and get the id
+	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to create comments.")
+		return
+	}
+
+	// Get user from db
+	user, getUserErr := cfg.Db.GetUserById(request.Context(), userId)
+	if getUserErr != nil {
+		cfg.LogError(getUserErr.Error(), getUserErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while commenting. Please log out, log back in and try again.")
+		return
+	}
+
+	// Parse the reqeust
+	decoder := json.NewDecoder(request.Body)
+	requestParams := CommentRequest{}
+	if err := decoder.Decode(&requestParams); err != nil {
+		cfg.LogError(err.Error(), err)
+		RespondWithError(writer, http.StatusBadRequest, "Something went wrong while commenting. Please try again.")
+		return
+	}
+
+	// Validate request
+	if requestParams.Content == "" {
+		RespondWithError(writer, http.StatusBadRequest, "Content must be provided.")
+		return
+	}
+
+	if requestParams.PostId == 0 {
+		RespondWithError(writer, http.StatusBadRequest, "Post id must be provided")
+		return
+	}
+
+	// Add comment.
+	params := database.CreateCommentParams{
+		Content: requestParams.Content,
+		PostID:  int64(requestParams.PostId),
+		UserID:  userId,
+	}
+	commentFromDb, commentErr := cfg.Db.CreateComment(request.Context(), params)
+	if commentErr != nil {
+		cfg.LogError(commentErr.Error(), commentErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while commenting. Please log out, log back in and try again.")
+		return
+	}
+
+	// Create response
+	response := CommentResponse{
+		ID:        commentFromDb.ID,
+		Content:   commentFromDb.Content,
+		CreatedAt: commentFromDb.CreatedAt.Time,
+		UpdatedAt: commentFromDb.UpdatedAt.Time,
+		PostId:    commentFromDb.PostID,
+		UserId:    commentFromDb.UserID,
+		User: userWithoutTokenResponse{
+			ID:              userId,
+			Email:           user.Email,
+			UserName:        user.UserName,
+			FullName:        user.FullName,
+			ProfileImageUrl: user.ProfileImageUrl.String,
+			Dob:             FormatNullDobString(user.Dob.Time),
+			CreatedAt:       user.CreatedAt.Time,
+			UpdatedAt:       user.UpdatedAt.Time,
+		},
+	}
+
+	RespondWithJson(writer, http.StatusCreated, response)
+}
+
 // Post Like
 func (cfg *ApiConfig) PostLikeHandler(writer http.ResponseWriter, request *http.Request) {
 	// Get the bearer token from the request
@@ -55,18 +227,18 @@ func (cfg *ApiConfig) PostLikeHandler(writer http.ResponseWriter, request *http.
 		return
 	}
 
-	// Parse post id
-	postIdStr := request.FormValue("post_id")
-	if postIdStr == "" {
-		cfg.LogError("Post id empty", errors.New("post id empty"))
-		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty.")
+	// Parse the reqeust
+	decoder := json.NewDecoder(request.Body)
+	requestParams := RequestWithPostId{}
+	if err := decoder.Decode(&requestParams); err != nil {
+		cfg.LogError(err.Error(), err)
+		RespondWithError(writer, http.StatusBadRequest, "Something went wrong while getting comments. Please try again.")
 		return
 	}
-	postId, postIdErr := strconv.Atoi(postIdStr)
-	if postIdErr != nil {
-		cfg.LogError(postIdErr.Error(), postIdErr)
-		RespondWithError(writer, http.StatusBadRequest, "Post id must be a number")
-		return
+	// Get Post Id
+	postId := requestParams.PostId
+	if postId == 0 {
+		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty")
 	}
 
 	// Like and Unlike
