@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,12 +23,13 @@ type PostResponse struct {
 	User         userWithoutTokenResponse `json:"user"`
 }
 
+// Get All Posts Handler
 func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *http.Request) {
 	// Get the bearer token from the request
 	token, tokenErr := GetBearerToken(request.Header)
 	if tokenErr != nil {
 		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
-		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get all posts.")
 		return
 	}
 
@@ -37,7 +37,7 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
 	if jwtErr != nil {
 		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
-		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get all posts.")
 		return
 	}
 
@@ -76,7 +76,6 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 
 		// If media url exists, get the first media url.
 		mediaUrl := ""
-		fmt.Printf("Media urls %v", postFromDb.MediaUrlsArray)
 		if len(postFromDb.MediaUrlsArray) > 0 {
 			mediaUrl = postFromDb.MediaUrlsArray[0]
 		}
@@ -106,6 +105,81 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 	}
 
 	// TODO: - Add Meta response for page information
+
+	RespondWithJson(writer, http.StatusOK, response)
+}
+
+// Get Post Details Handler
+func (cfg *ApiConfig) GetPostById(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get the post.")
+		return
+	}
+
+	// Verify the bearer token and get the id
+	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get the post.")
+		return
+	}
+
+	// Parse post id from request
+	postIdStr := request.PathValue("post_id")
+	if postIdStr == "" {
+		cfg.LogError("Post id empty", errors.New("post id empty"))
+		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty.")
+		return
+	}
+	postId, postIdErr := strconv.Atoi(postIdStr)
+	if postIdErr != nil {
+		cfg.LogError(postIdErr.Error(), postIdErr)
+		RespondWithError(writer, http.StatusBadRequest, "Post id must be a number")
+		return
+	}
+
+	// Get post by id db call
+	params := database.GetPostByIdParams{
+		ID:     int64(postId),
+		UserID: userId,
+	}
+	postFromDb, postDetailsErr := cfg.Db.GetPostById(request.Context(), params)
+	if postDetailsErr != nil {
+		cfg.LogError(postDetailsErr.Error(), postDetailsErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while getting the post details.")
+		return
+	}
+
+	// If media url exists, get the first media url.
+	mediaUrl := ""
+	if len(postFromDb.MediaUrlsArray) > 0 {
+		mediaUrl = postFromDb.MediaUrlsArray[0]
+	}
+
+	// Parse the response.
+	response := PostResponse{
+		ID:           postFromDb.ID,
+		Content:      postFromDb.Content,
+		MediaUrl:     mediaUrl,
+		LikedByUser:  postFromDb.LikedByUser,
+		LikeCount:    int(postFromDb.LikeCount),
+		CommentCount: int(postFromDb.CommentCount),
+		CreatedAt:    postFromDb.CreatedAt.Time,
+		UpdatedAt:    postFromDb.UpdatedAt.Time,
+		User: userWithoutTokenResponse{
+			ID:              postFromDb.AuthorID,
+			Email:           postFromDb.AuthorEmail,
+			UserName:        postFromDb.AuthorUserName,
+			FullName:        postFromDb.AuthorFullName,
+			ProfileImageUrl: postFromDb.AuthorProfileImageUrl.String,
+			Dob:             FormatNullDobString(postFromDb.AuthorDob.Time),
+			CreatedAt:       postFromDb.AuthorCreatedAt.Time,
+			UpdatedAt:       postFromDb.AuthorUpdatedAt.Time,
+		},
+	}
 
 	RespondWithJson(writer, http.StatusOK, response)
 }
