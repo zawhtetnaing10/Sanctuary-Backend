@@ -253,3 +253,14 @@ func (q *Queries) GetPostById(ctx context.Context, arg GetPostByIdParams) (GetPo
 	)
 	return i, err
 }
+
+const getPostsCount = `-- name: GetPostsCount :one
+SELECT COUNT(*) FROM posts WHERE deleted_at is NULL
+`
+
+func (q *Queries) GetPostsCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getPostsCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}

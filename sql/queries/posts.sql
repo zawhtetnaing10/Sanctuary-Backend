@@ -11,6 +11,9 @@ RETURNING *;
 -- name: DeleteAllPosts :exec
 DELETE FROM posts;
 
+-- name: GetPostsCount :one
+SELECT COUNT(*) FROM posts WHERE deleted_at is NULL;
+
 -- name: GetAllPosts :many
 SELECT
     p.id,

@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -9,6 +11,18 @@ import (
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/app"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
+
+// Post List Response
+type PostListResponse struct {
+	Data []PostResponse `json:"data"`
+	Meta MetaResponse   `json:"meta"`
+}
+
+// Meta Response
+type MetaResponse struct {
+	CurrentPage int    `json:"current_page"`
+	NextPageUrl string `json:"next_page_url"`
+}
 
 // Post Response
 type PostResponse struct {
@@ -21,6 +35,85 @@ type PostResponse struct {
 	CreatedAt    time.Time                `json:"created_at"`
 	UpdatedAt    time.Time                `json:"updated_at"`
 	User         userWithoutTokenResponse `json:"user"`
+}
+
+// Post Like
+func (cfg *ApiConfig) PostLikeHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to like the post.")
+		return
+	}
+
+	// Verify the bearer token and get the id
+	userId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to like the post.")
+		return
+	}
+
+	// Parse post id
+	postIdStr := request.FormValue("post_id")
+	if postIdStr == "" {
+		cfg.LogError("Post id empty", errors.New("post id empty"))
+		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty.")
+		return
+	}
+	postId, postIdErr := strconv.Atoi(postIdStr)
+	if postIdErr != nil {
+		cfg.LogError(postIdErr.Error(), postIdErr)
+		RespondWithError(writer, http.StatusBadRequest, "Post id must be a number")
+		return
+	}
+
+	// Like and Unlike
+	getPostLikeParams := database.GetPostLikeParams{
+		PostID: int64(postId),
+		UserID: userId,
+	}
+	_, getPostLikeErr := cfg.Db.GetPostLike(request.Context(), getPostLikeParams)
+	if getPostLikeErr != nil {
+		if errors.Is(getPostLikeErr, sql.ErrNoRows) {
+			// Post not yet liked. Insert post like
+			// Insert post likes
+			params := database.CreatePostLikeParams{
+				UserID: userId,
+				PostID: int64(postId),
+			}
+			_, postLikeErr := cfg.Db.CreatePostLike(request.Context(), params)
+			if postLikeErr != nil {
+				cfg.LogError(postLikeErr.Error(), postLikeErr)
+				RespondWithError(writer, http.StatusInternalServerError, "Something went wrong when liking the post.")
+				return
+			}
+
+			// Return empty response
+			writer.WriteHeader(http.StatusOK)
+			return
+		} else {
+			// Real database error. Return error response
+			cfg.LogError(getPostLikeErr.Error(), getPostLikeErr)
+			RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while modifying likes.")
+			return
+		}
+	} else {
+		// Already Liked. Delete post like
+		deletePostLikeParams := database.DeletePostLikeParams{
+			UserID: userId,
+			PostID: int64(postId),
+		}
+		if postUnlikeError := cfg.Db.DeletePostLike(request.Context(), deletePostLikeParams); postUnlikeError != nil {
+			cfg.LogError(postUnlikeError.Error(), postUnlikeError)
+			RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while modifying likes.")
+			return
+		}
+		// Return empty response
+		writer.WriteHeader(http.StatusOK)
+		return
+	}
 }
 
 // Get All Posts Handler
@@ -70,7 +163,7 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 		return
 	}
 
-	response := []PostResponse{}
+	postList := []PostResponse{}
 
 	for _, postFromDb := range posts {
 
@@ -101,10 +194,34 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 			},
 		}
 
-		response = append(response, postResponse)
+		postList = append(postList, postResponse)
 	}
 
-	// TODO: - Add Meta response for page information
+	// Get Total posts
+	totalCount, totalCountErr := cfg.Db.GetPostsCount(request.Context())
+	if totalCountErr != nil {
+		cfg.LogError(totalCountErr.Error(), totalCountErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while fetching posts.")
+		return
+	}
+
+	// Construct Meta Response
+	totalPages := (totalCount + app.PAGE_SIZE - 1) / app.PAGE_SIZE
+	var nextPageUrl string
+	if page < int(totalPages) {
+		nextPageUrl = fmt.Sprintf("%v/api/posts?page=%v", cfg.GetBaseUrl(), page+1)
+	} else {
+		nextPageUrl = ""
+	}
+	metaResponse := MetaResponse{
+		CurrentPage: page,
+		NextPageUrl: nextPageUrl,
+	}
+
+	response := PostListResponse{
+		Data: postList,
+		Meta: metaResponse,
+	}
 
 	RespondWithJson(writer, http.StatusOK, response)
 }

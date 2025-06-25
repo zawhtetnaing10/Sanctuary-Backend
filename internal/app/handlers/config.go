@@ -17,6 +17,16 @@ type ApiConfig struct {
 	Logger      *zap.Logger
 }
 
+// Get Base url
+func (cfg *ApiConfig) GetBaseUrl() string {
+	if cfg.Platform == "DEV" {
+		return "http://localhost:8080"
+	} else {
+		// TODO: - replace with production url
+		return ""
+	}
+}
+
 // Util function to log error
 func (cfg *ApiConfig) LogError(message string, err error) {
 	cfg.Logger.Error("Create user error", zap.Error(err))
