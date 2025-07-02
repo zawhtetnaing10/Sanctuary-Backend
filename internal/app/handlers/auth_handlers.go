@@ -168,11 +168,11 @@ func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *htt
 			UserID:     userId,
 			InterestID: interestId,
 			CreatedAt: pgtype.Timestamp{
-				Time:  time.Now(),
+				Time:  time.Now().UTC(),
 				Valid: true,
 			},
 			UpdatedAt: pgtype.Timestamp{
-				Time:  time.Now(),
+				Time:  time.Now().UTC(),
 				Valid: true,
 			},
 		}

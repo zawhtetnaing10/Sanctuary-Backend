@@ -44,6 +44,7 @@ type PostListResponse struct {
 // Meta Response
 type MetaResponse struct {
 	CurrentPage int    `json:"current_page"`
+	NextPage    int    `json:"next_page"`
 	NextPageUrl string `json:"next_page_url"`
 }
 
@@ -78,19 +79,27 @@ func (cfg *ApiConfig) GetAllCommentsHandler(writer http.ResponseWriter, request 
 		return
 	}
 
-	// Parse the reqeust
-	decoder := json.NewDecoder(request.Body)
-	requestParams := RequestWithPostId{}
-	if err := decoder.Decode(&requestParams); err != nil {
-		cfg.LogError(err.Error(), err)
-		RespondWithError(writer, http.StatusBadRequest, "Something went wrong while getting comments. Please try again.")
+	// Get Post Id Query param
+	var postId int
+	postIdStr := request.URL.Query().Get("post_id")
+	if postIdStr == "" {
+		// if no postId is provided, return an error
+		RespondWithError(writer, http.StatusBadRequest, "Post id must be provided")
 		return
+	} else {
+		// Convert the pageStr to int. If conversion fails, default to 1
+		postIdConverted, err := strconv.Atoi(postIdStr)
+		if err != nil || postIdConverted < 1 {
+			RespondWithError(writer, http.StatusBadRequest, "Error converting post id")
+			return
+		}
+		postId = postIdConverted
 	}
 
 	// Get Post Id
-	postId := requestParams.PostId
 	if postId == 0 {
 		RespondWithError(writer, http.StatusBadRequest, "Post id cannot be empty")
+		return
 	}
 
 	comments, commentsErr := cfg.Db.GetCommentsForPost(request.Context(), int64(postId))
@@ -379,14 +388,24 @@ func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *ht
 
 	// Construct Meta Response
 	totalPages := (totalCount + app.PAGE_SIZE - 1) / app.PAGE_SIZE
+
+	// Next page url
 	var nextPageUrl string
 	if page < int(totalPages) {
 		nextPageUrl = fmt.Sprintf("%v/api/posts?page=%v", cfg.GetBaseUrl(), page+1)
 	} else {
 		nextPageUrl = ""
 	}
+
+	// Next page
+	var nextPage int
+	if page < int(totalPages) {
+		nextPage = page + 1
+	}
+
 	metaResponse := MetaResponse{
 		CurrentPage: page,
+		NextPage:    nextPage,
 		NextPageUrl: nextPageUrl,
 	}
 

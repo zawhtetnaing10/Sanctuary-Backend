@@ -17,8 +17,8 @@ VALUES(
     $1,
     $2,
     $3,
-    NOW(),
-    NOW()
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
 )
 RETURNING id, content, created_at, updated_at, deleted_at, user_id, post_id
 `

@@ -14,8 +14,8 @@ INSERT INTO post_likes(user_id, post_id, created_at, updated_at)
 VALUES(
     $1,
     $2,
-    NOW(),
-    NOW()
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
 )
 RETURNING id, user_id, post_id, created_at, updated_at
 `

@@ -29,5 +29,5 @@ func (cfg *ApiConfig) GetBaseUrl() string {
 
 // Util function to log error
 func (cfg *ApiConfig) LogError(message string, err error) {
-	cfg.Logger.Error("Create user error", zap.Error(err))
+	cfg.Logger.Error("Error", zap.Error(err))
 }

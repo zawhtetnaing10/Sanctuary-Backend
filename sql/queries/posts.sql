@@ -2,8 +2,8 @@
 INSERT INTO posts(content, created_at, updated_at, user_id)
 VALUES(
     $1,
-    NOW(),
-    NOW(),
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC',
     $2
 )
 RETURNING *;

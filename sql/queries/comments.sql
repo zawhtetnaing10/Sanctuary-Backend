@@ -4,8 +4,8 @@ VALUES(
     $1,
     $2,
     $3,
-    NOW(),
-    NOW()
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
 )
 RETURNING *;
 
