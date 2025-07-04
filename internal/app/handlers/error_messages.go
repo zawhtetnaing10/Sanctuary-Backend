@@ -41,3 +41,5 @@ const CLIENT_NOT_AUTHORIZED_GET_FRIEND_REQUEST = "Your are not authorized to get
 const CLIENT_CANNOT_GET_FRIEND_REQUEST = "Something went wrong while getting friend requests. Please try again."
 const CLIENT_CANNOT_ACCEPT_FRIEND_REQUEST = "Something went wrong while accepting friend requests. Please try again."
 const CLIENT_CANNOT_GET_FRIENDS = "Something went wrong while getting friends. Please try again."
+
+const CLIENT_CANNOT_GET_USER = "Something went wrong while getting user. Please try again."

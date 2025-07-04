@@ -97,16 +97,7 @@ func (cfg *ApiConfig) CreateFriendRequestHandler(writer http.ResponseWriter, req
 		return
 	}
 
-	response := FriendRequestResponseWithoutUser{
-		Id:            createdFriendRequest.ID,
-		SenderId:      createdFriendRequest.SenderID,
-		ReceiverId:    createdFriendRequest.ReceiverID,
-		RequestStatus: createdFriendRequest.RequestStatus,
-		RequestedAt:   createdFriendRequest.RequestedAt.Time,
-		AcceptedAt:    createdFriendRequest.AcceptedAt.Time,
-		CreatedAt:     createdFriendRequest.CreatedAt.Time,
-		UpdatedAt:     createdFriendRequest.UpdatedAt.Time,
-	}
+	response := ConvertDBFrToFriendRequestWithoutUser(createdFriendRequest)
 
 	RespondWithJson(writer, http.StatusCreated, response)
 }
@@ -261,4 +252,17 @@ func (cfg *ApiConfig) GetAllFriendsHandler(writer http.ResponseWriter, request *
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
+}
+
+func ConvertDBFrToFriendRequestWithoutUser(dbFr database.FriendRequest) FriendRequestResponseWithoutUser {
+	return FriendRequestResponseWithoutUser{
+		Id:            dbFr.ID,
+		SenderId:      dbFr.SenderID,
+		ReceiverId:    dbFr.ReceiverID,
+		RequestStatus: dbFr.RequestStatus,
+		RequestedAt:   dbFr.RequestedAt.Time,
+		AcceptedAt:    dbFr.AcceptedAt.Time,
+		CreatedAt:     dbFr.CreatedAt.Time,
+		UpdatedAt:     dbFr.UpdatedAt.Time,
+	}
 }

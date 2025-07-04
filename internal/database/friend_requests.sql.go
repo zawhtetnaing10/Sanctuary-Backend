@@ -241,3 +241,43 @@ func (q *Queries) GetFriends(ctx context.Context, receiverID int64) ([]GetFriend
 	}
 	return items, nil
 }
+
+const getPendingFriendRequestsBetweenTwoUsers = `-- name: GetPendingFriendRequestsBetweenTwoUsers :many
+SELECT id, sender_id, receiver_id, request_status, requested_at, accepted_at, created_at, updated_at
+FROM friend_requests
+WHERE sender_id = $1 AND receiver_id = $2 AND request_status = 'pending'
+`
+
+type GetPendingFriendRequestsBetweenTwoUsersParams struct {
+	SenderID   int64
+	ReceiverID int64
+}
+
+func (q *Queries) GetPendingFriendRequestsBetweenTwoUsers(ctx context.Context, arg GetPendingFriendRequestsBetweenTwoUsersParams) ([]FriendRequest, error) {
+	rows, err := q.db.Query(ctx, getPendingFriendRequestsBetweenTwoUsers, arg.SenderID, arg.ReceiverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FriendRequest
+	for rows.Next() {
+		var i FriendRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.SenderID,
+			&i.ReceiverID,
+			&i.RequestStatus,
+			&i.RequestedAt,
+			&i.AcceptedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -43,6 +43,105 @@ type userWithoutTokenResponse struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+type userProfileResponse struct {
+	User           userWithoutTokenResponse           `json:"user"`
+	FriendRequests []FriendRequestResponseWithoutUser `json:"friend_requests"`
+}
+
+// Get User Id
+func (cfg *ApiConfig) GetUserProfileHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		return
+	}
+
+	// Verify the bearer token and get the id
+	loggedInUserId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, CLIENT_MSG_ERROR_UPDATE_USER)
+		return
+	}
+
+	userIdStr := request.PathValue("user_id")
+	if userIdStr == "" {
+		cfg.LogError("User id empty", errors.New("user id empty"))
+		RespondWithError(writer, http.StatusBadRequest, "User id cannot be empty.")
+		return
+	}
+	userId, userIdErr := strconv.Atoi(userIdStr)
+	if userIdErr != nil {
+		cfg.LogError(userIdErr.Error(), userIdErr)
+		RespondWithError(writer, http.StatusBadRequest, "User id must be a number")
+		return
+	}
+
+	// User Response
+	userFromDb, err := cfg.Db.GetUserById(request.Context(), int64(userId))
+	if err != nil {
+		cfg.LogError(err.Error(), err)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)
+		return
+	}
+	userResponse := userWithoutTokenResponse{
+		ID:              userFromDb.ID,
+		Email:           userFromDb.Email,
+		UserName:        userFromDb.UserName,
+		FullName:        userFromDb.FullName,
+		ProfileImageUrl: userFromDb.ProfileImageUrl.String,
+		Dob:             FormatNullDobString(userFromDb.Dob.Time),
+		CreatedAt:       userFromDb.CreatedAt.Time,
+		UpdatedAt:       userFromDb.UpdatedAt.Time,
+	}
+
+	// Friend Requests
+	frFromParams := database.GetPendingFriendRequestsBetweenTwoUsersParams{
+		SenderID:   loggedInUserId,
+		ReceiverID: userFromDb.ID,
+	}
+	frFromList, frFromErr := cfg.Db.GetPendingFriendRequestsBetweenTwoUsers(request.Context(), frFromParams)
+	if frFromErr != nil {
+		cfg.LogError(frFromErr.Error(), frFromErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)
+		return
+	}
+
+	frToParams := database.GetPendingFriendRequestsBetweenTwoUsersParams{
+		SenderID:   userFromDb.ID,
+		ReceiverID: loggedInUserId,
+	}
+	frToList, frToErr := cfg.Db.GetPendingFriendRequestsBetweenTwoUsers(request.Context(), frToParams)
+	if frToErr != nil {
+		cfg.LogError(frToErr.Error(), frToErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)
+		return
+	}
+
+	frResponse := []FriendRequestResponseWithoutUser{}
+
+	if len(frFromList) != 0 {
+		for _, frFrom := range frFromList {
+			frFromResponse := ConvertDBFrToFriendRequestWithoutUser(frFrom)
+			frResponse = append(frResponse, frFromResponse)
+		}
+	} else {
+		for _, frTo := range frToList {
+			frToResponse := ConvertDBFrToFriendRequestWithoutUser(frTo)
+			frResponse = append(frResponse, frToResponse)
+		}
+	}
+
+	// Response
+	response := userProfileResponse{
+		User:           userResponse,
+		FriendRequests: frResponse,
+	}
+	RespondWithJson(writer, http.StatusOK, response)
+}
+
 // Update user
 func (cfg *ApiConfig) UpdateUserHandler(writer http.ResponseWriter, request *http.Request) {
 
