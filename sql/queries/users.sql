@@ -5,8 +5,8 @@ VALUES(
     $2,
     $3,
     $4,
-    NOW(),
-    NOW()
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
 )
 RETURNING *;
 
@@ -28,7 +28,7 @@ SET
     user_name = $3,
     profile_image_url = $4,
     dob = $5,
-    updated_at = NOW()
+    updated_at = NOW() AT TIME ZONE 'UTC'
 WHERE
     id = $1
 RETURNING *;

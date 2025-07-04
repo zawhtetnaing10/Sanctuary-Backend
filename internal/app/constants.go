@@ -20,3 +20,7 @@ const TIME_PARSE_LAYOUT = "2006-01-02"
 
 // Pagination
 const PAGE_SIZE = 10
+
+// Friend request status
+const PENDING = "pending"
+const ACCEPTED = "accepted"

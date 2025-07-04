@@ -72,17 +72,26 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Add Handlers
+	// Auth
 	mux.HandleFunc("POST /api/register", apiCfg.RegisterHandler)
 	mux.HandleFunc("POST /api/reset", apiCfg.ResetHandler)
 	mux.HandleFunc("POST /api/login", apiCfg.LoginHandler)
 	mux.HandleFunc("POST /api/updateUser", apiCfg.UpdateUserHandler)
 	mux.HandleFunc("GET /api/interests", apiCfg.GetAllInterests)
+
+	// Posts
 	mux.HandleFunc("POST /api/posts", apiCfg.CreatePostHandler)
 	mux.HandleFunc("GET /api/posts", apiCfg.GetAllPostsHandler)
 	mux.HandleFunc("GET /api/posts/{post_id}", apiCfg.GetPostById)
 	mux.HandleFunc("POST /api/post_like", apiCfg.PostLikeHandler)
 	mux.HandleFunc("POST /api/comments", apiCfg.CreateCommentHandler)
 	mux.HandleFunc("GET /api/comments", apiCfg.GetAllCommentsHandler)
+
+	// Friend Requests
+	mux.HandleFunc("POST /api/friend_requests", apiCfg.CreateFriendRequestHandler)
+	mux.HandleFunc("GET /api/friend_requests", apiCfg.GetAllFriendRequestsForUserHandler)
+	mux.HandleFunc("PUT /api/accept_friend_request", apiCfg.AcceptFriendRequestHandler)
+	mux.HandleFunc("GET /api/friends", apiCfg.GetAllFriendsHandler)
 
 	// New http server
 	server := http.Server{

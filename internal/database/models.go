@@ -18,6 +18,17 @@ type Comment struct {
 	PostID    int64
 }
 
+type FriendRequest struct {
+	ID            int64
+	SenderID      int64
+	ReceiverID    int64
+	RequestStatus string
+	RequestedAt   pgtype.Timestamp
+	AcceptedAt    pgtype.Timestamp
+	CreatedAt     pgtype.Timestamp
+	UpdatedAt     pgtype.Timestamp
+}
+
 type Interest struct {
 	ID        int64
 	Name      string
