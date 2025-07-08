@@ -297,6 +297,88 @@ func (cfg *ApiConfig) PostLikeHandler(writer http.ResponseWriter, request *http.
 	}
 }
 
+// Get Posts By User Handler
+func (cfg *ApiConfig) GetAllPostsByUserHandler(writer http.ResponseWriter, request *http.Request) {
+	// Get the bearer token from the request
+	token, tokenErr := GetBearerToken(request.Header)
+	if tokenErr != nil {
+		cfg.LogError(SERVER_MSG_ERROR_GET_BEARER_TOKEN, tokenErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get all posts.")
+		return
+	}
+
+	// Verify the bearer token and get the id
+	loggedInUserId, jwtErr := ValidateJWT(token, cfg.TokenSecret)
+	if jwtErr != nil {
+		cfg.LogError(SERVER_MSG_JWT_VALIDATION_FAILED, jwtErr)
+		RespondWithError(writer, http.StatusUnauthorized, "You are not authorized to get all posts.")
+		return
+	}
+
+	// Parse user id from request
+	userIdStr := request.URL.Query().Get("user_id")
+	if userIdStr == "" {
+		cfg.LogError("User id empty", errors.New("user id empty"))
+		RespondWithError(writer, http.StatusBadRequest, "User id cannot be empty.")
+		return
+	}
+	userId, userIdErr := strconv.Atoi(userIdStr)
+	if userIdErr != nil {
+		cfg.LogError(userIdErr.Error(), userIdErr)
+		RespondWithError(writer, http.StatusBadRequest, "User id must be a number")
+		return
+	}
+
+	// Get Posts By User
+	params := database.GetPostsByUserParams{
+		UserID:   int64(loggedInUserId),
+		UserID_2: int64(userId),
+	}
+
+	posts, err := cfg.Db.GetPostsByUser(request.Context(), params)
+	if err != nil {
+		cfg.LogError(err.Error(), err)
+		RespondWithError(writer, http.StatusInternalServerError, "Something went wrong while fetching posts for user. Please try again.")
+		return
+	}
+
+	// Parse response
+	postList := []PostResponse{}
+	for _, postFromDb := range posts {
+
+		// If media url exists, get the first media url.
+		mediaUrl := ""
+		if len(postFromDb.MediaUrlsArray) > 0 {
+			mediaUrl = postFromDb.MediaUrlsArray[0]
+		}
+
+		postResponse := PostResponse{
+			ID:           postFromDb.ID,
+			Content:      postFromDb.Content,
+			MediaUrl:     mediaUrl,
+			LikedByUser:  postFromDb.LikedByUser,
+			LikeCount:    int(postFromDb.LikeCount),
+			CommentCount: int(postFromDb.CommentCount),
+			CreatedAt:    postFromDb.CreatedAt.Time,
+			UpdatedAt:    postFromDb.UpdatedAt.Time,
+			User: userWithoutTokenResponse{
+				ID:              postFromDb.AuthorID,
+				Email:           postFromDb.AuthorEmail,
+				UserName:        postFromDb.AuthorUserName,
+				FullName:        postFromDb.AuthorFullName,
+				ProfileImageUrl: postFromDb.AuthorProfileImageUrl.String,
+				Dob:             FormatNullDobString(postFromDb.AuthorDob.Time),
+				CreatedAt:       postFromDb.AuthorCreatedAt.Time,
+				UpdatedAt:       postFromDb.AuthorUpdatedAt.Time,
+			},
+		}
+
+		postList = append(postList, postResponse)
+	}
+
+	RespondWithJson(writer, http.StatusOK, postList)
+}
+
 // Get All Posts Handler
 func (cfg *ApiConfig) GetAllPostsHandler(writer http.ResponseWriter, request *http.Request) {
 	// Get the bearer token from the request

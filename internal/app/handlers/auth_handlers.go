@@ -32,6 +32,18 @@ type userWithTokenResponse struct {
 	Interests       []interestResponse `json:"interests"`
 }
 
+type userWithInterestsWithoutTokenResponse struct {
+	ID              int64              `json:"id"`
+	Email           string             `json:"email"`
+	UserName        string             `json:"user_name"`
+	FullName        string             `json:"full_name"`
+	ProfileImageUrl string             `json:"profile_image_url"`
+	Dob             string             `json:"dob"`
+	CreatedAt       time.Time          `json:"created_at"`
+	UpdatedAt       time.Time          `json:"updated_at"`
+	Interests       []interestResponse `json:"interests"`
+}
+
 type userWithoutTokenResponse struct {
 	ID              int64     `json:"id"`
 	Email           string    `json:"email"`
@@ -44,8 +56,8 @@ type userWithoutTokenResponse struct {
 }
 
 type userProfileResponse struct {
-	User           userWithoutTokenResponse           `json:"user"`
-	FriendRequests []FriendRequestResponseWithoutUser `json:"friend_requests"`
+	User           userWithInterestsWithoutTokenResponse `json:"user"`
+	FriendRequests []FriendRequestResponseWithoutUser    `json:"friend_requests"`
 }
 
 // Get User Id
@@ -86,7 +98,16 @@ func (cfg *ApiConfig) GetUserProfileHandler(writer http.ResponseWriter, request 
 		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)
 		return
 	}
-	userResponse := userWithoutTokenResponse{
+
+	// Get Interests for user
+	interests, getInterestsErr := getInterestsForUser(userFromDb.ID, request, cfg.Db)
+	if getInterestsErr != nil {
+		cfg.LogError(SERVER_MSG_GETTING_INTEREST_FOR_USER_FAILED, getInterestsErr)
+		RespondWithError(writer, http.StatusInternalServerError, CLIENT_MSG_INCORRECT_EMAIL_OR_PASSWORD)
+		return
+	}
+
+	userResponse := userWithInterestsWithoutTokenResponse{
 		ID:              userFromDb.ID,
 		Email:           userFromDb.Email,
 		UserName:        userFromDb.UserName,
@@ -95,25 +116,26 @@ func (cfg *ApiConfig) GetUserProfileHandler(writer http.ResponseWriter, request 
 		Dob:             FormatNullDobString(userFromDb.Dob.Time),
 		CreatedAt:       userFromDb.CreatedAt.Time,
 		UpdatedAt:       userFromDb.UpdatedAt.Time,
+		Interests:       interests,
 	}
 
 	// Friend Requests
-	frFromParams := database.GetPendingFriendRequestsBetweenTwoUsersParams{
+	frFromParams := database.GetFriendStatusBetweenTwoUsersParams{
 		SenderID:   loggedInUserId,
 		ReceiverID: userFromDb.ID,
 	}
-	frFromList, frFromErr := cfg.Db.GetPendingFriendRequestsBetweenTwoUsers(request.Context(), frFromParams)
+	frFromList, frFromErr := cfg.Db.GetFriendStatusBetweenTwoUsers(request.Context(), frFromParams)
 	if frFromErr != nil {
 		cfg.LogError(frFromErr.Error(), frFromErr)
 		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)
 		return
 	}
 
-	frToParams := database.GetPendingFriendRequestsBetweenTwoUsersParams{
+	frToParams := database.GetFriendStatusBetweenTwoUsersParams{
 		SenderID:   userFromDb.ID,
 		ReceiverID: loggedInUserId,
 	}
-	frToList, frToErr := cfg.Db.GetPendingFriendRequestsBetweenTwoUsers(request.Context(), frToParams)
+	frToList, frToErr := cfg.Db.GetFriendStatusBetweenTwoUsers(request.Context(), frToParams)
 	if frToErr != nil {
 		cfg.LogError(frToErr.Error(), frToErr)
 		RespondWithError(writer, http.StatusInternalServerError, CLIENT_CANNOT_GET_USER)

@@ -87,6 +87,7 @@ func main() {
 	mux.HandleFunc("POST /api/post_like", apiCfg.PostLikeHandler)
 	mux.HandleFunc("POST /api/comments", apiCfg.CreateCommentHandler)
 	mux.HandleFunc("GET /api/comments", apiCfg.GetAllCommentsHandler)
+	mux.HandleFunc("GET /api/posts_by_user", apiCfg.GetAllPostsByUserHandler)
 
 	// Friend Requests
 	mux.HandleFunc("POST /api/friend_requests", apiCfg.CreateFriendRequestHandler)

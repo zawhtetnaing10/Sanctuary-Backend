@@ -10,10 +10,10 @@ VALUES(
 )
 RETURNING *;
 
--- name: GetPendingFriendRequestsBetweenTwoUsers :many
+-- name: GetFriendStatusBetweenTwoUsers :many
 SELECT *
 FROM friend_requests
-WHERE sender_id = $1 AND receiver_id = $2 AND request_status = 'pending';
+WHERE sender_id = $1 AND receiver_id = $2;
 
 -- name: AcceptFriendRequest :one
 UPDATE friend_requests
