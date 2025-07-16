@@ -57,6 +57,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create Hub for chat.
+	hub := handlers.NewHub()
+	go hub.Run()
+
 	// Config
 	apiCfg := handlers.ApiConfig{
 		Db:          database.New(pool),
@@ -66,6 +70,7 @@ func main() {
 		S3Region:    s3Region,
 		S3Client:    s3.NewFromConfig(awsCfg),
 		Logger:      logger,
+		Hub:         hub,
 	}
 
 	// New http server mux
@@ -94,6 +99,9 @@ func main() {
 	mux.HandleFunc("GET /api/friend_requests", apiCfg.GetAllFriendRequestsForUserHandler)
 	mux.HandleFunc("PUT /api/accept_friend_request", apiCfg.AcceptFriendRequestHandler)
 	mux.HandleFunc("GET /api/friends", apiCfg.GetAllFriendsHandler)
+
+	// Test ws
+	mux.HandleFunc("/ws", apiCfg.WsHandler)
 
 	// New http server
 	server := http.Server{

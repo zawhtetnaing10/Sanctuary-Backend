@@ -15,6 +15,7 @@ type ApiConfig struct {
 	S3Region    string
 	S3Client    *s3.Client
 	Logger      *zap.Logger
+	Hub         *Hub
 }
 
 // Get Base url
