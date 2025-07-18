@@ -100,6 +100,10 @@ func main() {
 	mux.HandleFunc("PUT /api/accept_friend_request", apiCfg.AcceptFriendRequestHandler)
 	mux.HandleFunc("GET /api/friends", apiCfg.GetAllFriendsHandler)
 
+	// Chat
+	mux.HandleFunc("GET /api/conversations", apiCfg.GetAllConversationsHandler)
+	mux.HandleFunc("GET /api/chats", apiCfg.GetChatMessageHistoryHandler)
+
 	// Test ws
 	mux.HandleFunc("/ws", apiCfg.WsHandler)
 

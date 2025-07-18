@@ -8,6 +8,16 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type ChatMessage struct {
+	ID             int64
+	Content        string
+	CreatedAt      pgtype.Timestamp
+	UpdatedAt      pgtype.Timestamp
+	DeletedAt      pgtype.Timestamp
+	ConversationID int64
+	SenderID       int64
+}
+
 type Comment struct {
 	ID        int64
 	Content   string
@@ -16,6 +26,21 @@ type Comment struct {
 	DeletedAt pgtype.Timestamp
 	UserID    int64
 	PostID    int64
+}
+
+type Conversation struct {
+	ID               int64
+	ConversationType string
+	ConversationName pgtype.Text
+	CreatedAt        pgtype.Timestamp
+	UpdatedAt        pgtype.Timestamp
+	DeletedAt        pgtype.Timestamp
+}
+
+type ConversationParticipant struct {
+	ID             int64
+	ConversationID int64
+	UserID         int64
 }
 
 type FriendRequest struct {
