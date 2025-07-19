@@ -57,13 +57,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Datbase queries
+	Db := database.New(pool)
+
 	// Create Hub for chat.
-	hub := handlers.NewHub()
+	hub := handlers.NewHub(Db)
 	go hub.Run()
 
 	// Config
 	apiCfg := handlers.ApiConfig{
-		Db:          database.New(pool),
+		Pool:        pool,
+		Db:          Db,
 		TokenSecret: os.Getenv("TOKEN_SECRET"),
 		Platform:    os.Getenv("PLATFORM"),
 		S3Bucket:    s3Bucket,

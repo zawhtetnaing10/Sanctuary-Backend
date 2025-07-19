@@ -1,3 +1,14 @@
+-- name: CreateConversation :one
+INSERT INTO conversations(conversation_type, conversation_name, created_at, updated_at)
+VALUES(
+    $1,
+    $2,
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
+)
+RETURNING *;
+
+
 -- name: GetConversationsForUser :many
 WITH UserConversations AS (
     SELECT cp.conversation_id

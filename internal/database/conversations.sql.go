@@ -11,6 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createConversation = `-- name: CreateConversation :one
+INSERT INTO conversations(conversation_type, conversation_name, created_at, updated_at)
+VALUES(
+    $1,
+    $2,
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
+)
+RETURNING id, conversation_type, conversation_name, created_at, updated_at, deleted_at
+`
+
+type CreateConversationParams struct {
+	ConversationType string
+	ConversationName pgtype.Text
+}
+
+func (q *Queries) CreateConversation(ctx context.Context, arg CreateConversationParams) (Conversation, error) {
+	row := q.db.QueryRow(ctx, createConversation, arg.ConversationType, arg.ConversationName)
+	var i Conversation
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationType,
+		&i.ConversationName,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const getConversationForParticipants = `-- name: GetConversationForParticipants :one
 SELECT conversation_id
 FROM conversation_participants 

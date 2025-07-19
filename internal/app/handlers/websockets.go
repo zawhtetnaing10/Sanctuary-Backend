@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
 
 const (
@@ -21,13 +24,13 @@ type Client struct {
 	send chan []byte
 
 	// App specific
-	UserId         int
-	Username       string
-	ConversationId int
+	UserId         int64
+	ConversationId int64
 }
 
 // Hub
 type Hub struct {
+	Db         *database.Queries
 	clients    map[*Client]bool
 	broadcast  chan []byte
 	register   chan *Client
@@ -35,8 +38,9 @@ type Hub struct {
 }
 
 // New Hub
-func NewHub() *Hub {
+func NewHub(Db *database.Queries) *Hub {
 	return &Hub{
+		Db:         Db,
 		broadcast:  make(chan []byte),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
@@ -46,7 +50,7 @@ func NewHub() *Hub {
 
 // Runs the hub.
 func (hub *Hub) Run() {
-	log.Println("Websocket started.")
+	log.Println("Websocket started. Hub is running.")
 
 	for {
 		select {
@@ -61,17 +65,35 @@ func (hub *Hub) Run() {
 			}
 		case message := <-hub.broadcast:
 			for client := range hub.clients {
-				select {
-				case client.send <- message:
-					// Send message successful
-				default:
-					close(client.send)
-					delete(hub.clients, client)
-					log.Printf("Client %s send channel blocked/closed. Unregistering.\n", client.conn.RemoteAddr())
+				// Unmarshal the sent chat message
+				var chatMessage ChatMessageResponse
+				if unmarshalErr := json.Unmarshal(message, &chatMessage); unmarshalErr != nil {
+					log.Printf("Error unmarshalling message")
+					continue
+				}
+
+				// Only send the message when the conversation ids are the same.
+				if chatMessage.ConversationId == client.ConversationId {
+
+					select {
+					case client.send <- message:
+						// Send message successful
+					default:
+						close(client.send)
+						delete(hub.clients, client)
+						log.Printf("Client %s send channel blocked/closed. Unregistering.\n", client.conn.RemoteAddr())
+					}
 				}
 			}
 		}
 	}
+}
+
+// Message object which will be sent from the client side.
+type IncomingMessage struct {
+	Content        string `json:"content"`
+	SenderId       int    `json:"sender_id"`
+	ConversationId int    `json:"conversation_id"`
 }
 
 // Client ReadPump. Reads messages from client and forwards them to the hub
@@ -103,7 +125,53 @@ func (c *Client) ReadPump() {
 			break
 		}
 
-		c.hub.broadcast <- message
+		// TODO: - Decode the message to create the request and save the message
+		var incomingMessage IncomingMessage
+		if err := json.Unmarshal(message, &incomingMessage); err != nil {
+			log.Printf("Error unmarshaling incoming message for %s: %v, raw: %s\n", c.conn.RemoteAddr(), err, string(message))
+			continue
+		}
+
+		// Validation for security risks
+		if int64(incomingMessage.SenderId) != c.UserId {
+			log.Printf("Security risk: Client %d tried to send message in conversation %d as user %d", c.UserId, c.ConversationId, incomingMessage.SenderId)
+			continue
+		}
+		if int64(incomingMessage.ConversationId) != c.ConversationId {
+			log.Printf("Security alert: Client %d in conv %d tried to send message to conv %d\n", c.UserId, c.ConversationId, incomingMessage.ConversationId)
+			continue
+		}
+
+		// Save chat message in db.
+		chatMsgParams := database.CreateChatMessageParams{
+			Content:        incomingMessage.Content,
+			ConversationID: int64(incomingMessage.ConversationId),
+			SenderID:       int64(incomingMessage.SenderId),
+		}
+		createdChatMessage, chatMsgErr := c.hub.Db.CreateChatMessage(context.Background(), chatMsgParams)
+		if chatMsgErr != nil {
+			log.Printf("Error saving message to DB for %s: %v\n", c.conn.RemoteAddr(), chatMsgErr)
+			continue
+		}
+
+		// Create the ChatMessageResponse and marshal it here.
+		chatMessageResponse := ChatMessageResponse{
+			Id:             createdChatMessage.ID,
+			Content:        createdChatMessage.Content,
+			ConversationId: createdChatMessage.ConversationID,
+			SenderId:       createdChatMessage.SenderID,
+			CreatedAt:      createdChatMessage.CreatedAt.Time,
+			UpdatedAt:      createdChatMessage.UpdatedAt.Time,
+		}
+
+		messageBytes, err := json.Marshal(chatMessageResponse)
+		if err != nil {
+			log.Printf("Error marshalling message for %s: %v\n", c.conn.RemoteAddr(), createdChatMessage)
+			continue
+		}
+
+		// Send it over to the hub
+		c.hub.broadcast <- messageBytes
 		log.Printf("Client %s received message: %s\n", c.conn.RemoteAddr(), string(message))
 	}
 }

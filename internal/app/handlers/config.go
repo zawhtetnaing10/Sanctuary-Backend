@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 	"go.uber.org/zap"
 )
 
 // Api Config struct
 type ApiConfig struct {
+	Pool        *pgxpool.Pool
 	Db          *database.Queries
 	Platform    string
 	TokenSecret string

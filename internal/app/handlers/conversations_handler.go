@@ -1,17 +1,22 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
 
 type ChatMessageHistoryResponse struct {
 	ConversationId int64                    `json:"conversation_id"`
 	User           userWithoutTokenResponse `json:"user"`
-	ChatMessages   []ChatMessage            `json:"chat_messages"`
+	ChatMessages   []ChatMessageResponse    `json:"chat_messages"`
 }
 
 type ConversationResponse struct {
@@ -20,11 +25,11 @@ type ConversationResponse struct {
 	ConversationType string                   `json:"conversation_type"`
 	CreatedAt        time.Time                `json:"created_at"`
 	UpdatedAt        time.Time                `json:"updated_at"`
-	LastMessage      ChatMessage              `json:"last_message"`
+	LastMessage      ChatMessageResponse      `json:"last_message"`
 	User             userWithoutTokenResponse `json:"user"`
 }
 
-type ChatMessage struct {
+type ChatMessageResponse struct {
 	Id             int64     `json:"id"`
 	Content        string    `json:"content"`
 	ConversationId int64     `json:"conversation_id"`
@@ -67,7 +72,7 @@ func (cfg *ApiConfig) GetAllConversationsHandler(writer http.ResponseWriter, req
 			ConversationType: conversationFromDb.ConversationType,
 			CreatedAt:        conversationFromDb.ConversationCreatedAt.Time,
 			UpdatedAt:        conversationFromDb.ConversationUpdatedAt.Time,
-			LastMessage: ChatMessage{
+			LastMessage: ChatMessageResponse{
 				Id:             conversationFromDb.LastMessageID,
 				Content:        conversationFromDb.LastMessageContent,
 				ConversationId: conversationFromDb.LastMessageConversationID,
@@ -125,6 +130,14 @@ func (cfg *ApiConfig) GetChatMessageHistoryHandler(writer http.ResponseWriter, r
 		otherUserId = postIdConverted
 	}
 
+	// Get logged in user
+	loggedInUserFromDb, loggedInUserErr := cfg.Db.GetUserById(request.Context(), int64(loggedInUserId))
+	if loggedInUserErr != nil {
+		cfg.LogError(loggedInUserErr.Error(), loggedInUserErr)
+		RespondWithError(writer, http.StatusInternalServerError, "Failed to fetch logged in user. Please try again.")
+		return
+	}
+
 	// Get other user
 	otherUserFromDb, otherUserErr := cfg.Db.GetUserById(request.Context(), int64(otherUserId))
 	if otherUserErr != nil {
@@ -148,11 +161,56 @@ func (cfg *ApiConfig) GetChatMessageHistoryHandler(writer http.ResponseWriter, r
 		UserID:   loggedInUserId,
 		UserID_2: int64(otherUserId),
 	}
+
 	conversationId, conversationIdErr := cfg.Db.GetConversationForParticipants(request.Context(), params)
 	if conversationIdErr != nil {
-		cfg.LogError(conversationIdErr.Error(), conversationIdErr)
-		RespondWithError(writer, http.StatusInternalServerError, "Failed to find conversation.")
-		return
+		if errors.Is(conversationIdErr, sql.ErrNoRows) {
+			err := cfg.WithTransaction(request.Context(), func(q *database.Queries) error {
+				// Create new conversation
+				newConversationParams := database.CreateConversationParams{
+					ConversationType: fmt.Sprintf("%s - %s", loggedInUserFromDb.UserName, otherUser.UserName),
+				}
+
+				createdConversation, createConversationErr := q.CreateConversation(request.Context(), newConversationParams)
+				if createConversationErr != nil {
+					return createConversationErr
+				}
+				// Reset the conversationId with the currently created one.
+				conversationId = createdConversation.ID
+
+				// Create conversation participant for logged in user.
+				conversationParticipantParamsOne := database.CreateConversationParticipantParams{
+					ConversationID: createdConversation.ID,
+					UserID:         loggedInUserId,
+				}
+				_, conversationParamErrOne := q.CreateConversationParticipant(request.Context(), conversationParticipantParamsOne)
+				if conversationParamErrOne != nil {
+					return conversationParamErrOne
+				}
+
+				// Create conversation participant for other user
+				conversationParticipantParamTwo := database.CreateConversationParticipantParams{
+					ConversationID: createdConversation.ID,
+					UserID:         otherUser.ID,
+				}
+				_, conversationParticipantErrTwo := q.CreateConversationParticipant(request.Context(), conversationParticipantParamTwo)
+				if conversationParticipantErrTwo != nil {
+					return conversationParticipantErrTwo
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				cfg.LogError(err.Error(), err)
+				RespondWithError(writer, http.StatusInternalServerError, "Failed to create conversation. Please try agian.")
+				return
+			}
+		} else {
+			cfg.LogError(conversationIdErr.Error(), conversationIdErr)
+			RespondWithError(writer, http.StatusInternalServerError, "Failed to find conversation.")
+			return
+		}
 	}
 
 	// Get Messages
@@ -163,9 +221,9 @@ func (cfg *ApiConfig) GetChatMessageHistoryHandler(writer http.ResponseWriter, r
 		return
 	}
 
-	chatMessages := []ChatMessage{}
+	chatMessages := []ChatMessageResponse{}
 	for _, chatMessageFromDb := range chatMessagesFromDb {
-		chatMessageResponse := ChatMessage{
+		chatMessageResponse := ChatMessageResponse{
 			Id:             chatMessageFromDb.ID,
 			Content:        chatMessageFromDb.Content,
 			ConversationId: chatMessageFromDb.ConversationID,
@@ -183,4 +241,31 @@ func (cfg *ApiConfig) GetChatMessageHistoryHandler(writer http.ResponseWriter, r
 	}
 
 	RespondWithJson(writer, http.StatusOK, response)
+}
+
+func (cfg *ApiConfig) WithTransaction(ctx context.Context, fn func(q *database.Queries) error) error {
+	tx, err := cfg.Pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	qtx := cfg.Db.WithTx(tx)
+
+	defer func() {
+		if p := recover(); p != nil {
+			tx.Rollback(ctx)
+			panic(p)
+		} else if err != nil {
+			tx.Rollback(ctx)
+		} else {
+			err = tx.Commit(ctx)
+			if err != nil {
+				cfg.LogError("Failed to commit transaction", err)
+			}
+		}
+	}()
+
+	err = fn(qtx)
+
+	return err
 }

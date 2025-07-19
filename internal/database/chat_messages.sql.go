@@ -11,6 +11,39 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createChatMessage = `-- name: CreateChatMessage :one
+INSERT INTO chat_messages (content, conversation_id, sender_id, created_at, updated_at)
+VALUES (
+    $1,
+    $2,
+    $3,
+    NOW() AT TIME ZONE 'UTC',
+    NOW() AT TIME ZONE 'UTC'
+)
+RETURNING id, content, created_at, updated_at, deleted_at, conversation_id, sender_id
+`
+
+type CreateChatMessageParams struct {
+	Content        string
+	ConversationID int64
+	SenderID       int64
+}
+
+func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessageParams) (ChatMessage, error) {
+	row := q.db.QueryRow(ctx, createChatMessage, arg.Content, arg.ConversationID, arg.SenderID)
+	var i ChatMessage
+	err := row.Scan(
+		&i.ID,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+		&i.ConversationID,
+		&i.SenderID,
+	)
+	return i, err
+}
+
 const getChatMessagesForConversation = `-- name: GetChatMessagesForConversation :many
 SELECT id, content, conversation_id, sender_id, created_at, updated_at
 FROM chat_messages
