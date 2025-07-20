@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/zawhtetnaing10/Sanctuary-Backend/internal/database"
 )
 
@@ -168,7 +169,11 @@ func (cfg *ApiConfig) GetChatMessageHistoryHandler(writer http.ResponseWriter, r
 			err := cfg.WithTransaction(request.Context(), func(q *database.Queries) error {
 				// Create new conversation
 				newConversationParams := database.CreateConversationParams{
-					ConversationType: fmt.Sprintf("%s - %s", loggedInUserFromDb.UserName, otherUser.UserName),
+					ConversationName: pgtype.Text{
+						String: fmt.Sprintf("%s - %s", loggedInUserFromDb.UserName, otherUser.UserName),
+						Valid:  true,
+					},
+					ConversationType: "peer-to-peer",
 				}
 
 				createdConversation, createConversationErr := q.CreateConversation(request.Context(), newConversationParams)
