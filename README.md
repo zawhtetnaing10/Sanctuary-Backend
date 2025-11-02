@@ -1,16 +1,15 @@
 # Sanctuary-Backend
 
-This project serves as the backend for the Sanctuary chat application, providing robust user management, authentication, conversation handling, real-time messaging via WebSockets, and file storage capabilities.
+This project serves as the backend for the Sanctuary social media application, with features such as user management, authentication, conversation handling, real-time messaging via WebSockets, and file storage.
 
 ## Features
 
 * **User Management:** Create, retrieve, and manage user profiles.
-* **Authentication & Authorization:** Secure user login using JWT (JSON Web Tokens) with Bearer token authentication.
+* **Authentication & Authorization:** Secure user login using JWT (JSON Web Tokens).
 * **Post Management:** Create, browse, like, and comment on user posts.
 * **Friend Requests:** Send and accept friend requests, and browse the friends list.
-* **Conversation Management:** Create and retrieve chat conversations, including group chats and direct messages.
-* **Real-time Chat:** Instant message delivery via WebSockets. Messages are persisted to the database and broadcasted to relevant participants.
-* **File Uploads:** Securely upload and retrieve files (e.g., images, documents) using AWS S3.
+* **Real-time Chat:**  Messages are persisted to the database and broadcasted to relevant participants via WebSockets
+* **File Uploads:** Securely upload and retrieve images using AWS S3.
 
 ## Technologies Used
 
@@ -20,7 +19,7 @@ This project serves as the backend for the Sanctuary chat application, providing
 * **`gorilla/websocket`:** Go package for building WebSocket servers.
 * **AWS S3 SDK for Go:** For interacting with Amazon S3 for file storage.
 * **JWT:** For secure token-based authentication.
-* **`zap`:** Structured logging.
+* **`zap`:** Logging.
 
 ## Setup Instructions
 
@@ -89,20 +88,19 @@ This project uses AWS S3 for storing files (like user avatars or chat attachment
 Create a file named `.env` in the root directory of your project. You need to replace the placeholder values with your actual data.
 
 ```
-    DB_URL=
-    PLATFORM=DEV
-    TOKEN_SECRET=
+    DB_URL= [DB_URL]
+    PLATFORM= [DEV] or [PROD]
+    TOKEN_SECRET= [TOKEN_SECRET]
 
-    AWS_ACCESS_KEY_ID=
-    AWS_SECRET_ACCESS_KEY=
-    S3_BUCKET=
-    S3_REGION=
+    AWS_ACCESS_KEY_ID= [AWS_ACCESS_KEY_ID]
+    AWS_SECRET_ACCESS_KEY= [AWS_SECRET_ACCESS_KEY]
+    S3_BUCKET= [S3_BUCKET]
+    S3_REGION= [S3_REGION]
 ```
 
 **Explanation of Variables:**
 
 * **`DB_URL`**: Your PostgreSQL connection string. Format: `postgres://user:password@host:port/database_name?sslmode=disable`
-    * Example: `postgres://sanctuary_user:mypassword@localhost:5432/sanctuary?sslmode=disable`
 * **`PLATFORM`**: Indicates the environment (e.g., `DEV`, `PROD`). Used for conditional logic (e.g., logging levels).
 * **`TOKEN_SECRET`**: A long, random, and highly secret string used to sign your JWTs. **Generate a strong, unique one.**
 * **`AWS_ACCESS_KEY_ID`**: The Access Key ID of the IAM user you created for S3.
